@@ -3,29 +3,24 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const app = express();
 
-app.use(cors({
-  origin: 'https://pavelromci25.github.io',
-}));
+app.use(cors({ origin: 'https://pavelromci25.github.io' }));
 app.use(express.json());
 
 mongoose.connect('mongodb+srv://pavelromci25:lpUHGXAkgIaAbnnT@nebula.th0fboc.mongodb.net/nebula?retryWrites=true&w=majority')
   .then(() => console.log('MongoDB Atlas подключен'))
   .catch((err) => console.log('Ошибка подключения:', err));
 
-const GameSchema = new mongoose.Schema({
-  id: String,
-  name: String,
-  type: String,
-  url: String,
-  category: String,
-});
+const GameSchema = new mongoose.Schema({ id: String, name: String, type: String, url: String, category: String });
 const Game = mongoose.model('Game', GameSchema);
 
-const CoinSchema = new mongoose.Schema({
-  userId: String,
-  coins: Number,
+const UserSchema = new mongoose.Schema({
+  telegramId: String,
+  username: String,
+  coins: { type: Number, default: 0 },
+  stars: { type: Number, default: 0 },
+  referrals: [{ telegramId: String, username: String }],
 });
-const Coin = mongoose.model('Coin', CoinSchema);
+const User = mongoose.model('User', UserSchema);
 
 app.get('/api/games', async (req, res) => {
   const games = await Game.find();
@@ -44,13 +39,13 @@ seedDatabase();
 
 app.post('/api/coins', async (req, res) => {
   const { userId, coins } = req.body;
-  await Coin.updateOne({ userId }, { $inc: { coins } }, { upsert: true });
+  await User.updateOne({ telegramId: userId }, { $inc: { coins } }, { upsert: true });
   res.sendStatus(200);
 });
 
-app.get('/api/coins/:userId', async (req, res) => {
-  const coins = await Coin.findOne({ userId: req.params.userId });
-  res.json({ coins: coins?.coins || 0 });
+app.get('/api/user/:telegramId', async (req, res) => {
+  const user = await User.findOne({ telegramId: req.params.telegramId });
+  res.json(user || { telegramId: req.params.telegramId, coins: 0, stars: 0, referrals: [] });
 });
 
 const port = process.env.PORT || 3000;
