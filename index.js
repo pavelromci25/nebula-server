@@ -1,15 +1,18 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const cors = require('cors');
 const app = express();
+
+app.use(cors({
+  origin: 'https://pavelromci25.github.io', // Разрешаем только твой фронтенд
+}));
 
 app.use(express.json());
 
-// Подключение к MongoDB Atlas
 mongoose.connect('mongodb+srv://pavelromci25:lpUHGXAkgIaAbnnT@nebula.th0fboc.mongodb.net/nebula?retryWrites=true&w=majority')
   .then(() => console.log('MongoDB Atlas подключен'))
   .catch((err) => console.log('Ошибка подключения:', err));
 
-// Модель игры
 const GameSchema = new mongoose.Schema({
   id: String,
   name: String,
@@ -19,13 +22,11 @@ const GameSchema = new mongoose.Schema({
 });
 const Game = mongoose.model('Game', GameSchema);
 
-// API для получения игр
 app.get('/api/games', async (req, res) => {
   const games = await Game.find();
   res.json(games);
 });
 
-// Добавление тестовых данных
 async function seedDatabase() {
   await Game.deleteMany({});
   await Game.insertMany([
@@ -36,6 +37,5 @@ async function seedDatabase() {
 }
 seedDatabase();
 
-// Запуск сервера
-const port = process.env.PORT || 3000; // Для Render.com
+const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Сервер запущен на порту ${port}`));
