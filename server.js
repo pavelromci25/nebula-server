@@ -27,7 +27,7 @@ const UserSchema = new mongoose.Schema({
   lastLogin: { type: Date, default: Date.now },
   platforms: { type: [String], default: [] },
   onlineStatus: { type: String, default: 'offline' },
-  loginCount: { type: Number, default: 0 }, // Количество авторизаций
+  loginCount: { type: Number, default: 0 },
 });
 
 const User = mongoose.model('User', UserSchema);
@@ -38,7 +38,7 @@ const InventorySchema = new mongoose.Schema({
   coins: { type: Number, default: 0 },
   stars: { type: Number, default: 0 },
   telegramStars: { type: Number, default: 0 },
-  lastCoinUpdate: { type: Date, default: Date.now }, // Время последнего начисления монет
+  lastCoinUpdate: { type: Date, default: Date.now },
 });
 const Inventory = mongoose.model('Inventory', InventorySchema);
 
@@ -70,7 +70,9 @@ app.post('/api/user/update', async (req, res) => {
     const { userId, username, photoUrl, platform, isPremium, referrals } = req.body;
     const existingUser = await User.findOne({ userId });
     const platforms = existingUser ? [...new Set([...existingUser.platforms, platform])] : [platform];
-    
+    const now = new Date();
+    const loginCountIncrement = existingUser && (now - new Date(existingUser.lastLogin)) > 3600000 ? 1 : 0; // 1 час
+
     const user = await User.findOneAndUpdate(
       { userId },
       { 
@@ -79,11 +81,11 @@ app.post('/api/user/update', async (req, res) => {
         platform, 
         isPremium, 
         referrals, 
-        lastLogin: new Date(),
+        lastLogin: now,
         platforms,
         onlineStatus: 'online',
-        loginCount: existingUser ? existingUser.loginCount + 1 : 1,
-        ...(existingUser ? {} : { firstLogin: new Date() }),
+        loginCount: existingUser ? existingUser.loginCount + loginCountIncrement : 1,
+        ...(existingUser ? {} : { firstLogin: now }),
       },
       { upsert: true, new: true }
     );
@@ -130,7 +132,7 @@ app.get('/api/games', async (req, res) => {
   }
 });
 
-// Серверный таймер для начисления монет и проверки статуса
+// Серверная проверка статуса онлайн/оффлайн
 setInterval(async () => {
   try {
     const users = await User.find({ onlineStatus: 'online' });
@@ -141,12 +143,7 @@ setInterval(async () => {
       if (!inventory) continue;
 
       const diff = (now - new Date(inventory.lastCoinUpdate)) / 1000; // Разница в секундах
-      if (diff < 20) { // Если прошло меньше 20 секунд с последнего обновления
-        await Inventory.findOneAndUpdate(
-          { userId: user.userId },
-          { coins: inventory.coins + 1, lastCoinUpdate: now }
-        );
-      } else { // Если больше 20 секунд — пользователь оффлайн
+      if (diff > 30) { // Если нет обновления монет более 30 секунд
         await User.findOneAndUpdate(
           { userId: user.userId },
           { onlineStatus: 'offline' }
@@ -154,9 +151,9 @@ setInterval(async () => {
       }
     }
   } catch (err) {
-    console.error('Ошибка в таймере монет:', err);
+    console.error('Ошибка проверки статуса:', err);
   }
-}, 10000); // Проверка каждые 10 секунд
+}, 30000); // Проверка каждые 30 секунд
 
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
