@@ -20,15 +20,13 @@ const UserSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
   username: String,
   photoUrl: String,
-  coins: { type: Number, default: 0 },
-  stars: { type: Number, default: 0 },
   referrals: [{ telegramId: String, username: String }],
   platform: String,
   isPremium: Boolean,
-  firstLogin: { type: Date, default: Date.now }, // Дата первого входа
-  lastLogin: { type: Date, default: Date.now }, // Дата последнего входа
-  platforms: { type: [String], default: [] }, // Список используемых платформ
-  onlineStatus: { type: String, default: 'offline' }, // Статус онлайн/оффлайн
+  firstLogin: { type: Date, default: Date.now },
+  lastLogin: { type: Date, default: Date.now },
+  platforms: { type: [String], default: [] },
+  onlineStatus: { type: String, default: 'offline' },
 });
 
 const User = mongoose.model('User', UserSchema);
@@ -37,6 +35,7 @@ const User = mongoose.model('User', UserSchema);
 const InventorySchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
   coins: { type: Number, default: 0 }, // Монеты за активность
+  stars: { type: Number, default: 0 }, // Звёзды перенесены сюда
   telegramStars: { type: Number, default: 0 }, // Telegram Stars
 });
 const Inventory = mongoose.model('Inventory', InventorySchema);
@@ -58,6 +57,12 @@ app.get('/api/user/:userId', async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'Пользователь не найден' });
     }
+    // Проверяем статус онлайн/оффлайн
+    const now = new Date();
+    const lastActive = new Date(user.lastLogin);
+    const diff = (now - lastActive) / 1000; // Разница в секундах
+    user.onlineStatus = diff < 60 ? 'online' : 'offline'; // 60 секунд — порог
+    await user.save();
     res.json(user);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -66,7 +71,7 @@ app.get('/api/user/:userId', async (req, res) => {
 
 app.post('/api/user/update', async (req, res) => {
   try {
-    const { userId, username, photoUrl, platform, isPremium, coins, stars, referrals, onlineStatus } = req.body;
+    const { userId, username, photoUrl, platform, isPremium, referrals, onlineStatus } = req.body;
     const existingUser = await User.findOne({ userId });
     const platforms = existingUser ? [...new Set([...existingUser.platforms, platform])] : [platform];
     
@@ -77,13 +82,11 @@ app.post('/api/user/update', async (req, res) => {
         photoUrl, 
         platform, 
         isPremium, 
-        coins, 
-        stars, 
         referrals, 
         lastLogin: new Date(),
         platforms,
         onlineStatus,
-        ...(existingUser ? {} : { firstLogin: new Date() }), // Устанавливаем firstLogin только при создании
+        ...(existingUser ? {} : { firstLogin: new Date() }),
       },
       { upsert: true, new: true }
     );
@@ -108,10 +111,10 @@ app.get('/api/inventory/:userId', async (req, res) => {
 
 app.post('/api/inventory/update', async (req, res) => {
   try {
-    const { userId, coins, telegramStars } = req.body;
+    const { userId, coins, stars, telegramStars } = req.body;
     const inventory = await Inventory.findOneAndUpdate(
       { userId },
-      { coins, telegramStars },
+      { coins, stars, telegramStars },
       { upsert: true, new: true }
     );
     res.json(inventory);
