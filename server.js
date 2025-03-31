@@ -27,6 +27,7 @@ const UserSchema = new mongoose.Schema({
   lastLogin: { type: Date, default: Date.now },
   platforms: { type: [String], default: [] },
   onlineStatus: { type: String, default: 'offline' },
+  loginCount: { type: Number, default: 0 }, // Количество авторизаций
 });
 
 const User = mongoose.model('User', UserSchema);
@@ -34,9 +35,10 @@ const User = mongoose.model('User', UserSchema);
 // Схема и модель инвентаря
 const InventorySchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
-  coins: { type: Number, default: 0 }, // Монеты за активность
-  stars: { type: Number, default: 0 }, // Звёзды перенесены сюда
-  telegramStars: { type: Number, default: 0 }, // Telegram Stars
+  coins: { type: Number, default: 0 },
+  stars: { type: Number, default: 0 },
+  telegramStars: { type: Number, default: 0 },
+  lastCoinUpdate: { type: Date, default: Date.now }, // Время последнего начисления монет
 });
 const Inventory = mongoose.model('Inventory', InventorySchema);
 
@@ -57,12 +59,6 @@ app.get('/api/user/:userId', async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'Пользователь не найден' });
     }
-    // Проверяем статус онлайн/оффлайн
-    const now = new Date();
-    const lastActive = new Date(user.lastLogin);
-    const diff = (now - lastActive) / 1000; // Разница в секундах
-    user.onlineStatus = diff < 60 ? 'online' : 'offline'; // 60 секунд — порог
-    await user.save();
     res.json(user);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -71,7 +67,7 @@ app.get('/api/user/:userId', async (req, res) => {
 
 app.post('/api/user/update', async (req, res) => {
   try {
-    const { userId, username, photoUrl, platform, isPremium, referrals, onlineStatus } = req.body;
+    const { userId, username, photoUrl, platform, isPremium, referrals } = req.body;
     const existingUser = await User.findOne({ userId });
     const platforms = existingUser ? [...new Set([...existingUser.platforms, platform])] : [platform];
     
@@ -85,7 +81,8 @@ app.post('/api/user/update', async (req, res) => {
         referrals, 
         lastLogin: new Date(),
         platforms,
-        onlineStatus,
+        onlineStatus: 'online',
+        loginCount: existingUser ? existingUser.loginCount + 1 : 1,
         ...(existingUser ? {} : { firstLogin: new Date() }),
       },
       { upsert: true, new: true }
@@ -114,7 +111,7 @@ app.post('/api/inventory/update', async (req, res) => {
     const { userId, coins, stars, telegramStars } = req.body;
     const inventory = await Inventory.findOneAndUpdate(
       { userId },
-      { coins, stars, telegramStars },
+      { coins, stars, telegramStars, lastCoinUpdate: new Date() },
       { upsert: true, new: true }
     );
     res.json(inventory);
@@ -132,6 +129,34 @@ app.get('/api/games', async (req, res) => {
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
+
+// Серверный таймер для начисления монет и проверки статуса
+setInterval(async () => {
+  try {
+    const users = await User.find({ onlineStatus: 'online' });
+    const now = new Date();
+
+    for (const user of users) {
+      const inventory = await Inventory.findOne({ userId: user.userId });
+      if (!inventory) continue;
+
+      const diff = (now - new Date(inventory.lastCoinUpdate)) / 1000; // Разница в секундах
+      if (diff < 20) { // Если прошло меньше 20 секунд с последнего обновления
+        await Inventory.findOneAndUpdate(
+          { userId: user.userId },
+          { coins: inventory.coins + 1, lastCoinUpdate: now }
+        );
+      } else { // Если больше 20 секунд — пользователь оффлайн
+        await User.findOneAndUpdate(
+          { userId: user.userId },
+          { onlineStatus: 'offline' }
+        );
+      }
+    }
+  } catch (err) {
+    console.error('Ошибка в таймере монет:', err);
+  }
+}, 10000); // Проверка каждые 10 секунд
 
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
