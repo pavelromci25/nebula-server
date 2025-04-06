@@ -22,7 +22,16 @@ const PORT = process.env.PORT || 10000;
 app.get('/api/apps', async (req, res) => {
   try {
     const apps = await App.find();
-    res.json(apps);
+    // Преобразуем данные для совместимости с фронтендом
+    const transformedApps = apps.map(app => ({
+      ...app._doc,
+      banner: app.bannerImages && app.bannerImages.length > 0 ? app.bannerImages[0] : '',
+      categories: [app.category, ...(app.additionalCategories || [])],
+      rating: app.userRating,
+      telegramStars: app.telegramStarsDonations,
+      opens: app.clicks,
+    }));
+    res.json(transformedApps);
   } catch (error) {
     res.status(500).json({ error: 'Ошибка при получении приложений' });
   }
@@ -65,7 +74,7 @@ app.post('/api/apps/:id/complain', async (req, res) => {
     }
     app.complaints += 1;
     if (app.complaints >= 10) {
-      app.status = 'onModeration'; // Предполагаем поле status
+      app.status = 'onModeration';
     }
     await app.save();
     res.json(app);
