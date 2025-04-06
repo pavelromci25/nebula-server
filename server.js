@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const App = require('./models/App');
+const User = require('./models/User');
+const Inventory = require('./models/Inventory');
 
 dotenv.config();
 
@@ -16,7 +18,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 const PORT = process.env.PORT || 10000;
 
-// Получение всех приложений
+// Эндпоинты для приложений
 app.get('/api/apps', async (req, res) => {
   try {
     const apps = await App.find();
@@ -26,7 +28,6 @@ app.get('/api/apps', async (req, res) => {
   }
 });
 
-// Добавление приложения
 app.post('/api/apps', async (req, res) => {
   try {
     const appData = req.body;
@@ -38,7 +39,6 @@ app.post('/api/apps', async (req, res) => {
   }
 });
 
-// Добавление рейтинга
 app.post('/api/apps/:id/rate', async (req, res) => {
   try {
     const { id } = req.params;
@@ -56,7 +56,6 @@ app.post('/api/apps/:id/rate', async (req, res) => {
   }
 });
 
-// Добавление жалобы
 app.post('/api/apps/:id/complain', async (req, res) => {
   try {
     const { id } = req.params;
@@ -72,6 +71,70 @@ app.post('/api/apps/:id/complain', async (req, res) => {
     res.json(app);
   } catch (error) {
     res.status(500).json({ error: 'Ошибка при добавлении жалобы' });
+  }
+});
+
+// Эндпоинты для пользователей
+app.get('/api/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findOne({ id });
+    if (!user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при получении пользователя' });
+  }
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    const userData = req.body;
+    const newUser = new User(userData);
+    await newUser.save();
+    res.status(201).json(newUser);
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при создании пользователя' });
+  }
+});
+
+// Эндпоинты для инвентаря
+app.get('/api/inventory/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const inventory = await Inventory.findOne({ userId });
+    if (!inventory) {
+      return res.status(404).json({ error: 'Инвентарь не найден' });
+    }
+    res.json(inventory);
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при получении инвентаря' });
+  }
+});
+
+app.post('/api/inventory', async (req, res) => {
+  try {
+    const inventoryData = req.body;
+    const newInventory = new Inventory(inventoryData);
+    await newInventory.save();
+    res.status(201).json(newInventory);
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при создании инвентаря' });
+  }
+});
+
+app.patch('/api/inventory/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const updates = req.body;
+    const inventory = await Inventory.findOneAndUpdate({ userId }, updates, { new: true });
+    if (!inventory) {
+      return res.status(404).json({ error: 'Инвентарь не найден' });
+    }
+    res.json(inventory);
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при обновлении инвентаря' });
   }
 });
 
