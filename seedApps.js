@@ -19,10 +19,10 @@ const mockApps = [
     shortDescription: "Классическая игра-головоломка.",
     category: "Пазлы",
     additionalCategories: ["Классика"],
-    categories: ["Пазлы", "Классика"], // Добавляем объединённое поле
+    categories: ["Пазлы", "Классика"],
     icon: "https://via.placeholder.com/80",
     bannerImages: ["https://via.placeholder.com/300x150"],
-    banner: "https://via.placeholder.com/300x150", // Добавляем
+    banner: "https://via.placeholder.com/300x150",
     clicks: 1200,
     telegramStarsDonations: 150,
     votes: 0,
@@ -39,15 +39,15 @@ const mockApps = [
     longDescription: "Тетрис — легендарная игра-головоломка, где вам нужно складывать падающие блоки, чтобы заполнить ряды и набрать очки. Играйте и соревнуйтесь с друзьями!",
     geo: "Россия",
     developer: "Tetris Inc.",
-    rating: 4.5, // Добавляем
-    catalogRating: 4.8, // Добавляем
-    telegramStars: 150, // Добавляем
-    opens: 1200, // Добавляем
-    platforms: ["iOS", "Android", "Web"], // Добавляем
-    ageRating: "3+", // Добавляем
-    inAppPurchases: false, // Добавляем
-    gallery: ["https://via.placeholder.com/300", "https://via.placeholder.com/300"], // Добавляем
-    video: "https://www.youtube.com/embed/dQw4w9WgXcQ" // Добавляем
+    rating: 4.5,
+    catalogRating: 4.8,
+    telegramStars: 150,
+    opens: 1200,
+    platforms: ["iOS", "Android", "Web"],
+    ageRating: "3+",
+    inAppPurchases: false,
+    gallery: ["https://via.placeholder.com/300", "https://via.placeholder.com/300"],
+    video: "https://www.youtube.com/embed/dQw4w9WgXcQ"
   },
   {
     id: "2",
@@ -83,7 +83,8 @@ const mockApps = [
     platforms: ["Web"],
     ageRating: "3+",
     inAppPurchases: true,
-    gallery: ["https://via.placeholder.com/300"]
+    gallery: ["https://via.placeholder.com/300"],
+    video: undefined // Видео отсутствует
   },
   {
     id: "3",
@@ -156,7 +157,8 @@ const mockApps = [
     platforms: ["iOS", "Android", "Web"],
     ageRating: "12+",
     inAppPurchases: true,
-    gallery: ["https://via.placeholder.com/300"]
+    gallery: ["https://via.placeholder.com/300"],
+    video: undefined
   },
   {
     id: "5",
@@ -192,7 +194,8 @@ const mockApps = [
     platforms: ["Web"],
     ageRating: "6+",
     inAppPurchases: false,
-    gallery: ["https://via.placeholder.com/300", "https://via.placeholder.com/300"]
+    gallery: ["https://via.placeholder.com/300", "https://via.placeholder.com/300"],
+    video: undefined
   }
 ];
 
