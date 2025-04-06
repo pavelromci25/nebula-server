@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const TelegramBot = require('node-telegram-bot-api');
 const App = require('./models/App');
 const User = require('./models/User');
 const Inventory = require('./models/Inventory');
@@ -16,13 +17,15 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB подключён'))
   .catch(err => console.error('Ошибка подключения MongoDB:', err));
 
+// Инициализация Telegram Bot
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
+
 const PORT = process.env.PORT || 10000;
 
 // Эндпоинты для приложений
 app.get('/api/apps', async (req, res) => {
   try {
     const apps = await App.find();
-    // Преобразуем данные для совместимости с фронтендом
     const transformedApps = apps.map(app => ({
       ...app._doc,
       banner: app.bannerImages && app.bannerImages.length > 0 ? app.bannerImages[0] : '',
@@ -80,6 +83,68 @@ app.post('/api/apps/:id/complain', async (req, res) => {
     res.json(app);
   } catch (error) {
     res.status(500).json({ error: 'Ошибка при добавлении жалобы' });
+  }
+});
+
+// Эндпоинт для создания инвойса на Telegram Stars
+app.post('/api/apps/:id/donate', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, stars } = req.body;
+
+    // Проверяем приложение
+    const app = await App.findOne({ id });
+    if (!app) {
+      return res.status(404).json({ error: 'Приложение не найдено' });
+    }
+
+    // Ограничение на количество Stars (максимум 10 за раз)
+    if (stars > 10) {
+      return res.status(400).json({ error: 'Максимум 10 Stars за один раз' });
+    }
+
+    // Создаём инвойс
+    const invoice = await bot.createInvoiceLink({
+      title: `Донат для ${app.name}`,
+      description: `Поддержите приложение ${app.name} с помощью ${stars} Telegram Stars!`,
+      payload: JSON.stringify({ appId: id, userId, stars }),
+      provider_token: process.env.PAYMENT_PROVIDER_TOKEN,
+      currency: 'XTR', // Telegram Stars
+      prices: [{ label: 'Telegram Stars', amount: stars }],
+    });
+
+    res.json({ invoiceLink: invoice });
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при создании инвойса' });
+  }
+});
+
+// Обработка успешного платежа
+bot.on('pre_checkout_query', async (query) => {
+  try {
+    await bot.answerPreCheckoutQuery(query.id, true);
+  } catch (error) {
+    console.error('Ошибка при обработке pre_checkout_query:', error);
+  }
+});
+
+bot.on('successful_payment', async (msg) => {
+  try {
+    const payment = msg.successful_payment;
+    const payload = JSON.parse(payment.invoice_payload);
+    const { appId, userId, stars } = payload;
+
+    // Обновляем Telegram Stars приложения
+    const app = await App.findOne({ id: appId });
+    if (app) {
+      app.telegramStarsDonations = (app.telegramStarsDonations || 0) + stars;
+      await app.save();
+    }
+
+    // Отправляем сообщение пользователю
+    await bot.sendMessage(userId, `Спасибо за ваш донат в ${stars} Telegram Stars для приложения ${app.name}!`);
+  } catch (error) {
+    console.error('Ошибка при обработке успешного платежа:', error);
   }
 });
 
