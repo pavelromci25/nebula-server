@@ -26,8 +26,11 @@ const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: false }
 // Список разрешённых userId для разработчиков
 const allowedDeveloperIds = ['6567771093'];
 
+// Список разрешённых userId для администраторов
+const allowedAdminIds = ['6567771093'];
+
 // ID администратора, который будет получать уведомления
-const adminId = '6567771093'; // Замени на реальный userId администратора
+const adminId = '6567771093';
 
 const PORT = process.env.PORT || 10000;
 
@@ -39,6 +42,11 @@ const generateReferralCode = () => {
 // Проверка доступа для разработчиков
 const checkDeveloperAccess = (userId) => {
   return allowedDeveloperIds.includes(userId);
+};
+
+// Проверка доступа для администраторов
+const checkAdminAccess = (userId) => {
+  return allowedAdminIds.includes(userId);
 };
 
 // Эндпоинты для приложений
@@ -55,7 +63,8 @@ app.get('/api/apps', async (req, res) => {
     }));
     res.json(transformedApps);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при получении приложений' });
+    console.error('Ошибка при получении приложений:', error);
+    res.status(500).json({ error: 'Ошибка при получении приложений: ' + error.message });
   }
 });
 
@@ -66,7 +75,8 @@ app.post('/api/apps', async (req, res) => {
     await newApp.save();
     res.status(201).json(newApp);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при добавлении приложения' });
+    console.error('Ошибка при добавлении приложения:', error);
+    res.status(500).json({ error: 'Ошибка при добавлении приложения: ' + error.message });
   }
 });
 
@@ -83,7 +93,8 @@ app.post('/api/apps/:id/rate', async (req, res) => {
     await app.save();
     res.json(app);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при добавлении рейтинга' });
+    console.error('Ошибка при добавлении рейтинга:', error);
+    res.status(500).json({ error: 'Ошибка при добавлении рейтинга: ' + error.message });
   }
 });
 
@@ -101,7 +112,8 @@ app.post('/api/apps/:id/complain', async (req, res) => {
     await app.save();
     res.json(app);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при добавлении жалобы' });
+    console.error('Ошибка при добавлении жалобы:', error);
+    res.status(500).json({ error: 'Ошибка при добавлении жалобы: ' + error.message });
   }
 });
 
@@ -130,7 +142,8 @@ app.post('/api/apps/:id/donate', async (req, res) => {
 
     res.json({ invoiceLink: invoice });
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при создании инвойса' });
+    console.error('Ошибка при создании инвойса:', error);
+    res.status(500).json({ error: 'Ошибка при создании инвойса: ' + error.message });
   }
 });
 
@@ -187,7 +200,8 @@ app.get('/api/developer/:userId', async (req, res) => {
     await developer.save();
     res.json({ ...developer._doc, apps });
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при получении данных разработчика' });
+    console.error('Ошибка при получении данных разработчика:', error);
+    res.status(500).json({ error: 'Ошибка при получении данных разработчика: ' + error.message });
   }
 });
 
@@ -197,11 +211,39 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
     if (!checkDeveloperAccess(userId)) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
-    const appData = req.body;
     const developer = await Developer.findOne({ userId });
     if (!developer) {
       return res.status(404).json({ error: 'Разработчик не найден' });
     }
+
+    const appData = req.body;
+
+    // Валидация данных
+    if (!appData.type || !['game', 'app'].includes(appData.type)) {
+      return res.status(400).json({ error: 'Тип приложения должен быть "game" или "app"' });
+    }
+    if (!appData.name || typeof appData.name !== 'string' || appData.name.trim() === '') {
+      return res.status(400).json({ error: 'Название приложения обязательно' });
+    }
+    if (!appData.shortDescription || typeof appData.shortDescription !== 'string' || appData.shortDescription.trim() === '') {
+      return res.status(400).json({ error: 'Короткое описание обязательно' });
+    }
+    if (appData.shortDescription.length > 100) {
+      return res.status(400).json({ error: 'Короткое описание не должно превышать 100 символов' });
+    }
+    if (!appData.category || typeof appData.category !== 'string' || appData.category.trim() === '') {
+      return res.status(400).json({ error: 'Основная категория обязательна' });
+    }
+    if (!appData.icon || typeof appData.icon !== 'string' || appData.icon.trim() === '') {
+      return res.status(400).json({ error: 'URL аватарки обязателен' });
+    }
+    if (!appData.ageRating || typeof appData.ageRating !== 'string' || appData.ageRating.trim() === '') {
+      return res.status(400).json({ error: 'Возрастной рейтинг обязателен' });
+    }
+    if (!appData.contactInfo || typeof appData.contactInfo !== 'string' || appData.contactInfo.trim() === '') {
+      return res.status(400).json({ error: 'Контакты для связи обязательны' });
+    }
+
     const newApp = new App({
       ...appData,
       id: Date.now().toString(),
@@ -228,7 +270,8 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
 
     res.status(201).json(newApp);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при добавлении приложения' });
+    console.error('Ошибка при добавлении приложения:', error);
+    res.status(500).json({ error: 'Ошибка при добавлении приложения: ' + error.message });
   }
 });
 
@@ -245,7 +288,8 @@ app.patch('/api/developer/:userId/apps/:appId', async (req, res) => {
     }
     res.json(app);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при обновлении приложения' });
+    console.error('Ошибка при обновлении приложения:', error);
+    res.status(500).json({ error: 'Ошибка при обновлении приложения: ' + error.message });
   }
 });
 
@@ -305,7 +349,8 @@ app.get('/api/developer/:userId/stats', async (req, res) => {
 
     res.json(stats);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при получении статистики' });
+    console.error('Ошибка при получении статистики:', error);
+    res.status(500).json({ error: 'Ошибка при получении статистики: ' + error.message });
   }
 });
 
@@ -347,7 +392,8 @@ app.post('/api/developer/:userId/promote', async (req, res) => {
     await app.save();
     res.json({ message: `Продвижение успешно активировано на ${duration} дней` });
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при активации продвижения' });
+    console.error('Ошибка при активации продвижения:', error);
+    res.status(500).json({ error: 'Ошибка при активации продвижения: ' + error.message });
   }
 });
 
@@ -361,7 +407,8 @@ app.get('/api/users/:id', async (req, res) => {
     }
     res.json(user);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при получении пользователя' });
+    console.error('Ошибка при получении пользователя:', error);
+    res.status(500).json({ error: 'Ошибка при получении пользователя: ' + error.message });
   }
 });
 
@@ -372,7 +419,8 @@ app.post('/api/users', async (req, res) => {
     await newUser.save();
     res.status(201).json(newUser);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при создании пользователя' });
+    console.error('Ошибка при создании пользователя:', error);
+    res.status(500).json({ error: 'Ошибка при создании пользователя: ' + error.message });
   }
 });
 
@@ -386,7 +434,8 @@ app.get('/api/inventory/:userId', async (req, res) => {
     }
     res.json(inventory);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при получении инвентаря' });
+    console.error('Ошибка при получении инвентаря:', error);
+    res.status(500).json({ error: 'Ошибка при получении инвентаря: ' + error.message });
   }
 });
 
@@ -397,7 +446,8 @@ app.post('/api/inventory', async (req, res) => {
     await newInventory.save();
     res.status(201).json(newInventory);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при создании инвентаря' });
+    console.error('Ошибка при создании инвентаря:', error);
+    res.status(500).json({ error: 'Ошибка при создании инвентаря: ' + error.message });
   }
 });
 
@@ -411,30 +461,32 @@ app.patch('/api/inventory/:userId', async (req, res) => {
     }
     res.json(inventory);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при обновлении инвентаря' });
+    console.error('Ошибка при обновлении инвентаря:', error);
+    res.status(500).json({ error: 'Ошибка при обновлении инвентаря: ' + error.message });
   }
 });
-
-// Список разрешённых userId для администраторов
-const allowedAdminIds = ['6567771093']; // Замени на реальный userId администратора
-
-// Проверка доступа для администраторов
-const checkAdminAccess = (userId) => {
-  return allowedAdminIds.includes(userId);
-};
 
 // Эндпоинты для администратора
 app.get('/api/admin/apps', async (req, res) => {
   try {
+    const userId = req.query.userId; // Предполагаем, что userId передаётся как query-параметр
+    if (!checkAdminAccess(userId)) {
+      return res.status(403).json({ error: 'Доступ запрещён' });
+    }
     const apps = await App.find();
     res.json(apps);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при получении приложений' });
+    console.error('Ошибка при получении приложений для администратора:', error);
+    res.status(500).json({ error: 'Ошибка при получении приложений: ' + error.message });
   }
 });
 
 app.get('/api/admin/stats', async (req, res) => {
   try {
+    const userId = req.query.userId; // Предполагаем, что userId передаётся как query-параметр
+    if (!checkAdminAccess(userId)) {
+      return res.status(403).json({ error: 'Доступ запрещён' });
+    }
     const apps = await App.find();
     const stats = {
       totalApps: apps.length,
@@ -444,12 +496,17 @@ app.get('/api/admin/stats', async (req, res) => {
     };
     res.json(stats);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при получении статистики' });
+    console.error('Ошибка при получении статистики для администратора:', error);
+    res.status(500).json({ error: 'Ошибка при получении статистики: ' + error.message });
   }
 });
 
 app.patch('/api/admin/apps/:appId/approve', async (req, res) => {
   try {
+    const userId = req.query.userId; // Предполагаем, что userId передаётся как query-параметр
+    if (!checkAdminAccess(userId)) {
+      return res.status(403).json({ error: 'Доступ запрещён' });
+    }
     const { appId } = req.params;
     const app = await App.findOne({ id: appId });
     if (!app) {
@@ -460,12 +517,17 @@ app.patch('/api/admin/apps/:appId/approve', async (req, res) => {
     await app.save();
     res.json(app);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при подтверждении приложения' });
+    console.error('Ошибка при подтверждении приложения:', error);
+    res.status(500).json({ error: 'Ошибка при подтверждении приложения: ' + error.message });
   }
 });
 
 app.patch('/api/admin/apps/:appId/reject', async (req, res) => {
   try {
+    const userId = req.query.userId; // Предполагаем, что userId передаётся как query-параметр
+    if (!checkAdminAccess(userId)) {
+      return res.status(403).json({ error: 'Доступ запрещён' });
+    }
     const { appId } = req.params;
     const { rejectionReason } = req.body;
     const app = await App.findOne({ id: appId });
@@ -477,7 +539,8 @@ app.patch('/api/admin/apps/:appId/reject', async (req, res) => {
     await app.save();
     res.json(app);
   } catch (error) {
-    res.status(500).json({ error: 'Ошибка при отклонении приложения' });
+    console.error('Ошибка при отклонении приложения:', error);
+    res.status(500).json({ error: 'Ошибка при отклонении приложения: ' + error.message });
   }
 });
 
