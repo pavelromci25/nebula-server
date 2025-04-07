@@ -21,9 +21,13 @@ mongoose.connect(process.env.MONGO_URI)
 // Инициализация ботов
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 const developerBot = new TelegramBot(process.env.DEVELOPER_BOT_TOKEN, { polling: false });
+const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: false });
 
 // Список разрешённых userId для разработчиков
-const allowedDeveloperIds = ['6567771093']; // Замени на реальные userId
+const allowedDeveloperIds = ['6567771093'];
+
+// ID администратора, который будет получать уведомления
+const adminId = '6567771093'; // Замени на реальный userId администратора
 
 const PORT = process.env.PORT || 10000;
 
@@ -212,6 +216,16 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
     await newApp.save();
     developer.apps.push(newApp._id);
     await developer.save();
+
+    // Отправляем уведомление администратору
+    const message = `Новое приложение добавлено для модерации!\n` +
+                    `Разработчик: ${userId}\n` +
+                    `Название: ${newApp.name}\n` +
+                    `Тип: ${newApp.type}\n` +
+                    `Категория: ${newApp.category}\n` +
+                    `ID приложения: ${newApp.id}`;
+    await adminBot.sendMessage(adminId, message);
+
     res.status(201).json(newApp);
   } catch (error) {
     res.status(500).json({ error: 'Ошибка при добавлении приложения' });
