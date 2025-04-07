@@ -46,6 +46,11 @@ const checkDeveloperAccess = (userId) => {
 
 // Проверка доступа для администраторов
 const checkAdminAccess = (userId) => {
+  if (!userId || typeof userId !== 'string') {
+    console.log('checkAdminAccess: Invalid userId:', userId);
+    return false;
+  }
+  console.log('checkAdminAccess: Checking userId:', userId);
   return allowedAdminIds.includes(userId);
 };
 
@@ -469,7 +474,8 @@ app.patch('/api/inventory/:userId', async (req, res) => {
 // Эндпоинты для администратора
 app.get('/api/admin/apps', async (req, res) => {
   try {
-    const userId = req.query.userId; // Предполагаем, что userId передаётся как query-параметр
+    console.log('GET /api/admin/apps - userId:', req.query.userId);
+    const userId = req.query.userId;
     if (!checkAdminAccess(userId)) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
@@ -483,7 +489,8 @@ app.get('/api/admin/apps', async (req, res) => {
 
 app.get('/api/admin/stats', async (req, res) => {
   try {
-    const userId = req.query.userId; // Предполагаем, что userId передаётся как query-параметр
+    console.log('GET /api/admin/stats - userId:', req.query.userId);
+    const userId = req.query.userId;
     if (!checkAdminAccess(userId)) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
