@@ -222,6 +222,7 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
     }
 
     const appData = req.body;
+    console.log('Received appData:', appData);
 
     // Валидация данных
     if (!appData.type || !['game', 'app'].includes(appData.type)) {
@@ -259,6 +260,7 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
       votes: 0,
       userRating: 0,
       complaints: 0,
+      dateAdded: appData.dateAdded || new Date().toISOString(), // Добавляем dateAdded, если его нет
     });
     await newApp.save();
     developer.apps.push(newApp._id);
