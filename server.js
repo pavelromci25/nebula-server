@@ -415,6 +415,72 @@ app.patch('/api/inventory/:userId', async (req, res) => {
   }
 });
 
+// Список разрешённых userId для администраторов
+const allowedAdminIds = ['6567771093']; // Замени на реальный userId администратора
+
+// Проверка доступа для администраторов
+const checkAdminAccess = (userId) => {
+  return allowedAdminIds.includes(userId);
+};
+
+// Эндпоинты для администратора
+app.get('/api/admin/apps', async (req, res) => {
+  try {
+    const apps = await App.find();
+    res.json(apps);
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при получении приложений' });
+  }
+});
+
+app.get('/api/admin/stats', async (req, res) => {
+  try {
+    const apps = await App.find();
+    const stats = {
+      totalApps: apps.length,
+      totalClicks: apps.reduce((sum, app) => sum + (app.clicks || 0), 0),
+      totalStars: apps.reduce((sum, app) => sum + (app.telegramStarsDonations || 0), 0),
+      totalComplaints: apps.reduce((sum, app) => sum + (app.complaints || 0), 0),
+    };
+    res.json(stats);
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при получении статистики' });
+  }
+});
+
+app.patch('/api/admin/apps/:appId/approve', async (req, res) => {
+  try {
+    const { appId } = req.params;
+    const app = await App.findOne({ id: appId });
+    if (!app) {
+      return res.status(404).json({ error: 'Приложение не найдено' });
+    }
+    app.status = 'added';
+    app.rejectionReason = undefined;
+    await app.save();
+    res.json(app);
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при подтверждении приложения' });
+  }
+});
+
+app.patch('/api/admin/apps/:appId/reject', async (req, res) => {
+  try {
+    const { appId } = req.params;
+    const { rejectionReason } = req.body;
+    const app = await App.findOne({ id: appId });
+    if (!app) {
+      return res.status(404).json({ error: 'Приложение не найдено' });
+    }
+    app.status = 'rejected';
+    app.rejectionReason = rejectionReason;
+    await app.save();
+    res.json(app);
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при отклонении приложения' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
 });
