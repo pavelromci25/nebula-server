@@ -18,23 +18,13 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB подключён'))
   .catch(err => console.error('Ошибка подключения MongoDB:', err));
 
-// Инициализация ботов
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
-const developerBot = new TelegramBot(process.env.DEVELOPER_BOT_TOKEN, { polling: false });
-
-// Список разрешённых userId для разработчиков (временное решение)
-const allowedDeveloperIds = ['6567771093']; // Замени на реальные userId
 
 const PORT = process.env.PORT || 10000;
 
 // Генерация реферального кода
 const generateReferralCode = () => {
   return Math.random().toString(36).substring(2, 10).toUpperCase();
-};
-
-// Проверка доступа для разработчиков
-const checkDeveloperAccess = (userId) => {
-  return allowedDeveloperIds.includes(userId);
 };
 
 // Эндпоинты для приложений
@@ -166,9 +156,6 @@ bot.on('successful_payment', async (msg) => {
 app.get('/api/developer/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    if (!checkDeveloperAccess(userId)) {
-      return res.status(403).json({ error: 'Доступ запрещён' });
-    }
     let developer = await Developer.findOne({ userId });
     if (!developer) {
       developer = new Developer({
@@ -190,9 +177,6 @@ app.get('/api/developer/:userId', async (req, res) => {
 app.post('/api/developer/:userId/apps', async (req, res) => {
   try {
     const { userId } = req.params;
-    if (!checkDeveloperAccess(userId)) {
-      return res.status(403).json({ error: 'Доступ запрещён' });
-    }
     const appData = req.body;
     const developer = await Developer.findOne({ userId });
     if (!developer) {
@@ -220,10 +204,7 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
 
 app.patch('/api/developer/:userId/apps/:appId', async (req, res) => {
   try {
-    const { userId, appId } = req.params;
-    if (!checkDeveloperAccess(userId)) {
-      return res.status(403).json({ error: 'Доступ запрещён' });
-    }
+    const { appId } = req.params;
     const updates = req.body;
     const app = await App.findOneAndUpdate({ id: appId }, updates, { new: true });
     if (!app) {
@@ -238,9 +219,6 @@ app.patch('/api/developer/:userId/apps/:appId', async (req, res) => {
 app.get('/api/developer/:userId/stats', async (req, res) => {
   try {
     const { userId } = req.params;
-    if (!checkDeveloperAccess(userId)) {
-      return res.status(403).json({ error: 'Доступ запрещён' });
-    }
     const apps = await App.find({ developerId: userId });
     const allApps = await App.find();
 
@@ -297,10 +275,7 @@ app.get('/api/developer/:userId/stats', async (req, res) => {
 
 app.post('/api/developer/:userId/promote', async (req, res) => {
   try {
-    const { userId, appId, type, duration } = req.body;
-    if (!checkDeveloperAccess(userId)) {
-      return res.status(403).json({ error: 'Доступ запрещён' });
-    }
+    const { userId, appId, type, duration } = req.body; // type: 'catalog' | 'category', duration: 3 | 14 | 30
     const developer = await Developer.findOne({ userId });
     if (!developer) {
       return res.status(404).json({ error: 'Разработчик не найден' });
@@ -311,7 +286,7 @@ app.post('/api/developer/:userId/promote', async (req, res) => {
       return res.status(404).json({ error: 'Приложение не найдено' });
     }
 
-    const cost = duration === 3 ? 50 : duration === 14 ? 200 : 500;
+    const cost = duration === 3 ? 50 : duration === 14 ? 200 : 500; // Стоимость в Telegram Stars
     if ((developer.telegramStarsBalance || 0) < cost) {
       return res.status(400).json({ error: 'Недостаточно Telegram Stars' });
     }
