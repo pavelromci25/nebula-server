@@ -21,6 +21,12 @@ mongoose.connect(process.env.MONGO_URI)
 // Инициализация ботов
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 const developerBot = new TelegramBot(process.env.DEVELOPER_BOT_TOKEN, { polling: false });
+
+// Проверка токена для adminBot
+if (!process.env.ADMIN_BOT_TOKEN) {
+  console.error('Ошибка: ADMIN_BOT_TOKEN не предоставлен в переменных окружения');
+  process.exit(1);
+}
 const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: false });
 
 // Список разрешённых userId для разработчиков
@@ -200,10 +206,12 @@ app.get('/api/developer/:userId', async (req, res) => {
       });
       await developer.save();
     }
-    const apps = await App.find({ developerId: userId });
-    developer.apps = apps.map(app => app._id);
+    const apps = await App.find({ developerId: userId }); // Возвращаем все приложения разработчика
+    // Удаляем дубликаты по id
+    const uniqueApps = Array.from(new Map(apps.map(app => [app.id, app])).values());
+    developer.apps = uniqueApps.map(app => app._id);
     await developer.save();
-    res.json({ ...developer._doc, apps });
+    res.json({ ...developer._doc, apps: uniqueApps });
   } catch (error) {
     console.error('Ошибка при получении данных разработчика:', error);
     res.status(500).json({ error: 'Ошибка при получении данных разработчика: ' + error.message });
@@ -250,6 +258,12 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
       return res.status(400).json({ error: 'Контакты для связи обязательны' });
     }
 
+    // Проверка на дублирование приложения
+    const existingApp = await App.findOne({ name: appData.name, developerId: userId });
+    if (existingApp) {
+      return res.status(400).json({ error: 'Приложение с таким названием уже существует для этого разработчика' });
+    }
+
     const newApp = new App({
       ...appData,
       id: Date.now().toString(),
@@ -260,20 +274,24 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
       votes: 0,
       userRating: 0,
       complaints: 0,
-      dateAdded: appData.dateAdded || new Date().toISOString(), // Добавляем dateAdded, если его нет
+      dateAdded: appData.dateAdded || new Date().toISOString(),
     });
     await newApp.save();
     developer.apps.push(newApp._id);
     await developer.save();
 
     // Отправляем уведомление администратору
-    const message = `Новое приложение добавлено для модерации!\n` +
-                    `Разработчик: ${userId}\n` +
-                    `Название: ${newApp.name}\n` +
-                    `Тип: ${newApp.type}\n` +
-                    `Категория: ${newApp.category}\n` +
-                    `ID приложения: ${newApp.id}`;
-    await adminBot.sendMessage(adminId, message);
+    try {
+      const message = `Новое приложение добавлено для модерации!\n` +
+                      `Разработчик: ${userId}\n` +
+                      `Название: ${newApp.name}\n` +
+                      `Тип: ${newApp.type}\n` +
+                      `Категория: ${newApp.category}\n` +
+                      `ID приложения: ${newApp.id}`;
+      await adminBot.sendMessage(adminId, message);
+    } catch (notificationError) {
+      console.error('Ошибка при отправке уведомления администратору:', notificationError);
+    }
 
     res.status(201).json(newApp);
   } catch (error) {
