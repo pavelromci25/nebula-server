@@ -91,7 +91,7 @@ app.post('/api/apps', async (req, res) => {
   }
 });
 
-app.post('/api/apps/:id/rate', async (req, res) => {
+app.post('/api/apps/:userId/rate', async (req, res) => {
   try {
     const { id } = req.params;
     const { rating } = req.body;
@@ -109,7 +109,7 @@ app.post('/api/apps/:id/rate', async (req, res) => {
   }
 });
 
-app.post('/api/apps/:id/complain', async (req, res) => {
+app.post('/api/apps/:userId/complain', async (req, res) => {
   try {
     const { id } = req.params;
     const app = await App.findOne({ id });
@@ -128,7 +128,7 @@ app.post('/api/apps/:id/complain', async (req, res) => {
   }
 });
 
-app.post('/api/apps/:id/donate', async (req, res) => {
+app.post('/api/apps/:userId/donate', async (req, res) => {
   try {
     const { id } = req.params;
     const { userId, stars } = req.body;
@@ -423,7 +423,7 @@ app.post('/api/developer/:userId/promote', async (req, res) => {
 });
 
 // Эндпоинты для пользователей
-app.get('/api/users/:id', async (req, res) => {
+app.get('/api/users/:userId', async (req, res) => {
   try {
     const { id } = req.params;
     const user = await User.findOne({ id });
