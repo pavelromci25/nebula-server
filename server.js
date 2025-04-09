@@ -1,3 +1,7 @@
+// ============================================================================
+// БЛОК 1: ИНИЦИАЛИЗАЦИЯ И ПОДКЛЮЧЕНИЯ
+// ============================================================================
+
 const express = require('express');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
@@ -8,17 +12,20 @@ const User = require('./models/User');
 const Inventory = require('./models/Inventory');
 const Developer = require('./models/Developer');
 
+// Загружаем переменные окружения из .env
 dotenv.config();
 
+// Инициализация приложения Express
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Подключение к MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB подключён'))
   .catch(err => console.error('Ошибка подключения MongoDB:', err));
 
-// Инициализация ботов
+// Инициализация ботов Telegram
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 const developerBot = new TelegramBot(process.env.DEVELOPER_BOT_TOKEN, { polling: false });
 
@@ -29,28 +36,22 @@ if (!process.env.ADMIN_BOT_TOKEN) {
 }
 const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: false });
 
-// Список разрешённых userId для разработчиков
+// Общие константы
+const PORT = process.env.PORT || 10000;
 const allowedDeveloperIds = ['6567771093'];
-
-// Список разрешённых userId для администраторов
 const allowedAdminIds = ['6567771093'];
-
-// ID администратора, который будет получать уведомления
 const adminId = '6567771093';
 
-const PORT = process.env.PORT || 10000;
-
-// Генерация реферального кода
+// Общие утилиты
 const generateReferralCode = () => {
   return Math.random().toString(36).substring(2, 10).toUpperCase();
 };
 
-// Проверка доступа для разработчиков
+// Функции проверки доступа
 const checkDeveloperAccess = (userId) => {
   return allowedDeveloperIds.includes(userId);
 };
 
-// Проверка доступа для администраторов
 const checkAdminAccess = (userId) => {
   if (!userId || typeof userId !== 'string') {
     console.log('checkAdminAccess: Invalid userId:', userId);
@@ -60,10 +61,14 @@ const checkAdminAccess = (userId) => {
   return allowedAdminIds.includes(userId);
 };
 
-// Эндпоинты для приложений
+// ============================================================================
+// БЛОК 2: ДЛЯ КАТАЛОГА (nebula-frontend)
+// ============================================================================
+
+// Эндпоинты для каталога приложений
 app.get('/api/apps', async (req, res) => {
   try {
-    const apps = await App.find();
+    const apps = await App.find({ status: 'added' });
     const transformedApps = apps.map(app => ({
       ...app._doc,
       banner: app.bannerImages && app.bannerImages.length > 0 ? app.bannerImages[0] : '',
@@ -79,19 +84,7 @@ app.get('/api/apps', async (req, res) => {
   }
 });
 
-app.post('/api/apps', async (req, res) => {
-  try {
-    const appData = req.body;
-    const newApp = new App(appData);
-    await newApp.save();
-    res.status(201).json(newApp);
-  } catch (error) {
-    console.error('Ошибка при добавлении приложения:', error);
-    res.status(500).json({ error: 'Ошибка при добавлении приложения: ' + error.message });
-  }
-});
-
-app.post('/api/apps/:userId/rate', async (req, res) => {
+app.post('/api/apps/:id/rate', async (req, res) => {
   try {
     const { id } = req.params;
     const { rating } = req.body;
@@ -109,7 +102,7 @@ app.post('/api/apps/:userId/rate', async (req, res) => {
   }
 });
 
-app.post('/api/apps/:userId/complain', async (req, res) => {
+app.post('/api/apps/:id/complain', async (req, res) => {
   try {
     const { id } = req.params;
     const app = await App.findOne({ id });
@@ -128,7 +121,7 @@ app.post('/api/apps/:userId/complain', async (req, res) => {
   }
 });
 
-app.post('/api/apps/:userId/donate', async (req, res) => {
+app.post('/api/apps/:id/donate', async (req, res) => {
   try {
     const { id } = req.params;
     const { userId, stars } = req.body;
@@ -158,6 +151,7 @@ app.post('/api/apps/:userId/donate', async (req, res) => {
   }
 });
 
+// Обработчики Telegram-бота для каталога
 bot.on('pre_checkout_query', async (query) => {
   try {
     await bot.answerPreCheckoutQuery(query.id, true);
@@ -190,7 +184,101 @@ bot.on('successful_payment', async (msg) => {
   }
 });
 
-// Эндпоинты для разработчиков
+// Эндпоинты для пользователей каталога
+app.get('/api/users/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    console.log('GET /api/users/:userId - Searching for userId:', userId);
+    const user = await User.findOne({ userId });
+    if (!user) {
+      console.log('GET /api/users/:userId - User not found for userId:', userId);
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    console.log('GET /api/users/:userId - Found user:', user);
+    res.json(user);
+  } catch (error) {
+    console.error('Ошибка при получении пользователя:', error);
+    res.status(500).json({ error: 'Ошибка при получении пользователя: ' + error.message });
+  }
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    const userData = req.body;
+    const { userId } = userData;
+
+    console.log('POST /api/users - Received userData:', userData);
+
+    const existingUser = await User.findOne({ userId });
+    if (existingUser) {
+      console.log('POST /api/users - User already exists:', existingUser);
+      return res.status(200).json(existingUser);
+    }
+
+    const newUser = new User(userData);
+    await newUser.save();
+    console.log('POST /api/users - Created new user:', newUser);
+    res.status(201).json(newUser);
+  } catch (error) {
+    console.error('Ошибка при создании пользователя:', error);
+    res.status(500).json({ error: 'Ошибка при создании пользователя: ' + error.message });
+  }
+});
+
+// Эндпоинты для инвентаря пользователей каталога
+app.get('/api/inventory/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    console.log('GET /api/inventory/:userId - Searching for userId:', userId);
+    const inventory = await Inventory.findOne({ userId });
+    if (!inventory) {
+      console.log('GET /api/inventory/:userId - Inventory not found for userId:', userId);
+      return res.status(404).json({ error: 'Инвентарь не найден' });
+    }
+    console.log('GET /api/inventory/:userId - Found inventory:', inventory);
+    res.json(inventory);
+  } catch (error) {
+    console.error('Ошибка при получении инвентаря:', error);
+    res.status(500).json({ error: 'Ошибка при получении инвентаря: ' + error.message });
+  }
+});
+
+app.post('/api/inventory', async (req, res) => {
+  try {
+    const inventoryData = req.body;
+    console.log('POST /api/inventory - Received inventoryData:', inventoryData);
+    const newInventory = new Inventory(inventoryData);
+    await newInventory.save();
+    console.log('POST /api/inventory - Created new inventory:', newInventory);
+    res.status(201).json(newInventory);
+  } catch (error) {
+    console.error('Ошибка при создании инвентаря:', error);
+    res.status(500).json({ error: 'Ошибка при создании инвентаря: ' + error.message });
+  }
+});
+
+app.patch('/api/inventory/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const updates = req.body;
+    console.log('PATCH /api/inventory/:userId - Updating for userId:', userId, 'with updates:', updates);
+    const inventory = await Inventory.findOneAndUpdate({ userId }, updates, { new: true });
+    if (!inventory) {
+      console.log('PATCH /api/inventory/:userId - Inventory not found for userId:', userId);
+      return res.status(404).json({ error: 'Инвентарь не найден' });
+    }
+    console.log('PATCH /api/inventory/:userId - Updated inventory:', inventory);
+    res.json(inventory);
+  } catch (error) {
+    console.error('Ошибка при обновлении инвентаря:', error);
+    res.status(500).json({ error: 'Ошибка при обновлении инвентаря: ' + error.message });
+  }
+});
+
+// ============================================================================
+// БЛОК 3: ДЛЯ РАЗРАБОТЧИКОВ (nebula-developer-frontend)
+// ============================================================================
+
 app.get('/api/developer/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -206,12 +294,10 @@ app.get('/api/developer/:userId', async (req, res) => {
       });
       await developer.save();
     }
-    const apps = await App.find({ developerId: userId }); // Возвращаем все приложения разработчика
-    // Удаляем дубликаты по id
-    const uniqueApps = Array.from(new Map(apps.map(app => [app.id, app])).values());
-    developer.apps = uniqueApps.map(app => app._id);
+    const apps = await App.find({ developerId: userId });
+    developer.apps = apps.map(app => app._id);
     await developer.save();
-    res.json({ ...developer._doc, apps: uniqueApps });
+    res.json({ ...developer._doc, apps });
   } catch (error) {
     console.error('Ошибка при получении данных разработчика:', error);
     res.status(500).json({ error: 'Ошибка при получении данных разработчика: ' + error.message });
@@ -232,7 +318,6 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
     const appData = req.body;
     console.log('Received appData:', appData);
 
-    // Валидация данных
     if (!appData.type || !['game', 'app'].includes(appData.type)) {
       return res.status(400).json({ error: 'Тип приложения должен быть "game" или "app"' });
     }
@@ -258,7 +343,6 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
       return res.status(400).json({ error: 'Контакты для связи обязательны' });
     }
 
-    // Проверка на дублирование приложения
     const existingApp = await App.findOne({ name: appData.name, developerId: userId });
     if (existingApp) {
       return res.status(400).json({ error: 'Приложение с таким названием уже существует для этого разработчика' });
@@ -280,7 +364,6 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
     developer.apps.push(newApp._id);
     await developer.save();
 
-    // Отправляем уведомление администратору
     try {
       const message = `Новое приложение добавлено для модерации!\n` +
                       `Разработчик: ${userId}\n` +
@@ -422,76 +505,10 @@ app.post('/api/developer/:userId/promote', async (req, res) => {
   }
 });
 
-// Эндпоинты для пользователей
-app.get('/api/users/:userId', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const user = await User.findOne({ id });
-    if (!user) {
-      return res.status(404).json({ error: 'Пользователь не найден' });
-    }
-    res.json(user);
-  } catch (error) {
-    console.error('Ошибка при получении пользователя:', error);
-    res.status(500).json({ error: 'Ошибка при получении пользователя: ' + error.message });
-  }
-});
+// ============================================================================
+// БЛОК 4: ДЛЯ АДМИНИСТРАЦИИ (nebula-admin-frontend)
+// ============================================================================
 
-app.post('/api/users', async (req, res) => {
-  try {
-    const userData = req.body;
-    const newUser = new User(userData);
-    await newUser.save();
-    res.status(201).json(newUser);
-  } catch (error) {
-    console.error('Ошибка при создании пользователя:', error);
-    res.status(500).json({ error: 'Ошибка при создании пользователя: ' + error.message });
-  }
-});
-
-// Эндпоинты для инвентаря
-app.get('/api/inventory/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const inventory = await Inventory.findOne({ userId });
-    if (!inventory) {
-      return res.status(404).json({ error: 'Инвентарь не найден' });
-    }
-    res.json(inventory);
-  } catch (error) {
-    console.error('Ошибка при получении инвентаря:', error);
-    res.status(500).json({ error: 'Ошибка при получении инвентаря: ' + error.message });
-  }
-});
-
-app.post('/api/inventory', async (req, res) => {
-  try {
-    const inventoryData = req.body;
-    const newInventory = new Inventory(inventoryData);
-    await newInventory.save();
-    res.status(201).json(newInventory);
-  } catch (error) {
-    console.error('Ошибка при создании инвентаря:', error);
-    res.status(500).json({ error: 'Ошибка при создании инвентаря: ' + error.message });
-  }
-});
-
-app.patch('/api/inventory/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const updates = req.body;
-    const inventory = await Inventory.findOneAndUpdate({ userId }, updates, { new: true });
-    if (!inventory) {
-      return res.status(404).json({ error: 'Инвентарь не найден' });
-    }
-    res.json(inventory);
-  } catch (error) {
-    console.error('Ошибка при обновлении инвентаря:', error);
-    res.status(500).json({ error: 'Ошибка при обновлении инвентаря: ' + error.message });
-  }
-});
-
-// Эндпоинты для администратора
 app.get('/api/admin/apps', async (req, res) => {
   try {
     console.log('GET /api/admin/apps - userId:', req.query.userId);
@@ -530,7 +547,7 @@ app.get('/api/admin/stats', async (req, res) => {
 
 app.patch('/api/admin/apps/:appId/approve', async (req, res) => {
   try {
-    const userId = req.query.userId; // Предполагаем, что userId передаётся как query-параметр
+    const userId = req.query.userId;
     if (!checkAdminAccess(userId)) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
@@ -551,7 +568,7 @@ app.patch('/api/admin/apps/:appId/approve', async (req, res) => {
 
 app.patch('/api/admin/apps/:appId/reject', async (req, res) => {
   try {
-    const userId = req.query.userId; // Предполагаем, что userId передаётся как query-параметр
+    const userId = req.query.userId;
     if (!checkAdminAccess(userId)) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
@@ -570,6 +587,10 @@ app.patch('/api/admin/apps/:appId/reject', async (req, res) => {
     res.status(500).json({ error: 'Ошибка при отклонении приложения: ' + error.message });
   }
 });
+
+// ============================================================================
+// БЛОК 5: ЗАПУСК СЕРВЕРА
+// ============================================================================
 
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
