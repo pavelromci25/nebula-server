@@ -66,6 +66,7 @@ const checkAdminAccess = (userId) => {
 // ============================================================================
 
 // Эндпоинты для каталога приложений
+// Эндпоинты для каталога приложений
 app.get('/api/apps', async (req, res) => {
   try {
     const apps = await App.find({ status: 'added' });
@@ -77,9 +78,9 @@ app.get('/api/apps', async (req, res) => {
       stars: app.stars || 0,
       telegramStars: app.telegramStarsDonations,
       opens: app.clicks,
-      clicks: app.clicks, // Добавляем clicks
-      isPromotedInCatalog: app.isPromotedInCatalog, // Добавляем isPromotedInCatalog
-      dateAdded: app.dateAdded, // Добавляем dateAdded
+      clicks: app.clicks,
+      isPromotedInCatalog: app.isPromotedInCatalog,
+      dateAdded: app.dateAdded,
     }));
     res.json(transformedApps);
   } catch (error) {
@@ -139,14 +140,14 @@ app.post('/api/apps/:id/donate', async (req, res) => {
       return res.status(400).json({ error: 'Максимум 10 Stars за один раз' });
     }
 
-    // Обновляем внутренние stars вместо telegramStars
+    // Обновляем внутренние stars
     app.stars = (app.stars || 0) + stars;
     await app.save();
 
     // Обновляем баланс разработчика
     const developer = await Developer.findOne({ userId: app.developerId });
     if (developer) {
-      developer.starsBalance = (developer.starsBalance || 0) + stars; // Используем starsBalance
+      developer.starsBalance = (developer.starsBalance || 0) + stars;
       await developer.save();
     }
 
