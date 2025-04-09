@@ -74,8 +74,12 @@ app.get('/api/apps', async (req, res) => {
       banner: app.bannerImages && app.bannerImages.length > 0 ? app.bannerImages[0] : '',
       categories: [app.category, ...(app.additionalCategories || [])],
       rating: app.userRating,
+      stars: app.stars || 0,
       telegramStars: app.telegramStarsDonations,
       opens: app.clicks,
+      clicks: app.clicks, // Добавляем clicks
+      isPromotedInCatalog: app.isPromotedInCatalog, // Добавляем isPromotedInCatalog
+      dateAdded: app.dateAdded, // Добавляем dateAdded
     }));
     res.json(transformedApps);
   } catch (error) {
@@ -135,19 +139,32 @@ app.post('/api/apps/:id/donate', async (req, res) => {
       return res.status(400).json({ error: 'Максимум 10 Stars за один раз' });
     }
 
-    const invoice = await bot.createInvoiceLink({
-      title: `Донат для ${app.name}`,
-      description: `Поддержите приложение ${app.name} с помощью ${stars} Telegram Stars!`,
-      payload: JSON.stringify({ appId: id, userId, stars }),
-      provider_token: process.env.PAYMENT_PROVIDER_TOKEN,
-      currency: 'XTR',
-      prices: [{ label: 'Telegram Stars', amount: stars }],
-    });
+    // Обновляем внутренние stars вместо telegramStars
+    app.stars = (app.stars || 0) + stars;
+    await app.save();
 
-    res.json({ invoiceLink: invoice });
+    // Обновляем баланс разработчика
+    const developer = await Developer.findOne({ userId: app.developerId });
+    if (developer) {
+      developer.starsBalance = (developer.starsBalance || 0) + stars; // Используем starsBalance
+      await developer.save();
+    }
+
+    // Обновляем инвентарь пользователя (вычитаем stars)
+    const inventory = await Inventory.findOne({ userId });
+    if (!inventory) {
+      return res.status(404).json({ error: 'Инвентарь пользователя не найден' });
+    }
+    if ((inventory.stars || 0) < stars) {
+      return res.status(400).json({ error: 'Недостаточно Stars для доната' });
+    }
+    inventory.stars = (inventory.stars || 0) - stars;
+    await inventory.save();
+
+    res.json({ message: `Донат ${stars} Stars успешно отправлен!` });
   } catch (error) {
-    console.error('Ошибка при создании инвойса:', error);
-    res.status(500).json({ error: 'Ошибка при создании инвойса: ' + error.message });
+    console.error('Ошибка при создании доната:', error);
+    res.status(500).json({ error: 'Ошибка при создании доната: ' + error.message });
   }
 });
 
@@ -272,6 +289,22 @@ app.patch('/api/inventory/:userId', async (req, res) => {
   } catch (error) {
     console.error('Ошибка при обновлении инвентаря:', error);
     res.status(500).json({ error: 'Ошибка при обновлении инвентаря: ' + error.message });
+  }
+});
+
+app.post('/api/apps/:id/click', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const app = await App.findOne({ id });
+    if (!app) {
+      return res.status(404).json({ error: 'Приложение не найдено' });
+    }
+    app.clicks = (app.clicks || 0) + 1;
+    await app.save();
+    res.json({ message: 'Счётчик кликов увеличен' });
+  } catch (error) {
+    console.error('Ошибка при увеличении счётчика кликов:', error);
+    res.status(500).json({ error: 'Ошибка при увеличении счётчика кликов: ' + error.message });
   }
 });
 
