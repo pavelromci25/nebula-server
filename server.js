@@ -66,7 +66,6 @@ const checkAdminAccess = (userId) => {
 // ============================================================================
 
 // Эндпоинты для каталога приложений
-// Эндпоинты для каталога приложений
 app.get('/api/apps', async (req, res) => {
   try {
     const apps = await App.find({ status: 'added' });
@@ -140,8 +139,8 @@ app.post('/api/apps/:id/donate', async (req, res) => {
       return res.status(400).json({ error: 'Максимум 10 Stars за один раз' });
     }
 
-    // Обновляем внутренние stars
-    app.stars = (app.stars || 0) + stars;
+    // Обновляем telegramStarsDonations вместо stars
+    app.telegramStarsDonations = (app.telegramStarsDonations || 0) + stars;
     await app.save();
 
     // Обновляем баланс разработчика
@@ -149,6 +148,15 @@ app.post('/api/apps/:id/donate', async (req, res) => {
     if (developer) {
       developer.starsBalance = (developer.starsBalance || 0) + stars;
       await developer.save();
+
+      // Отправляем уведомление разработчику
+      try {
+        const user = await User.findOne({ userId });
+        const message = `Пользователь ${user?.username || 'Неизвестный'} задонатил вам ${stars} Stars для приложения ${app.name}!`;
+        await developerBot.sendMessage(app.developerId, message);
+      } catch (notificationError) {
+        console.error('Ошибка при отправке уведомления разработчику:', notificationError);
+      }
     }
 
     // Обновляем инвентарь пользователя (вычитаем stars)
@@ -162,7 +170,7 @@ app.post('/api/apps/:id/donate', async (req, res) => {
     inventory.stars = (inventory.stars || 0) - stars;
     await inventory.save();
 
-    res.json({ message: `Донат ${stars} Stars успешно отправлен!` });
+    res.json({ message: `Донат ${stars} Stars успешно отправлен!`, updatedStars: app.telegramStarsDonations });
   } catch (error) {
     console.error('Ошибка при создании доната:', error);
     res.status(500).json({ error: 'Ошибка при создании доната: ' + error.message });
