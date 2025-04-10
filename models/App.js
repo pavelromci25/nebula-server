@@ -6,8 +6,10 @@ const appSchema = new mongoose.Schema({
   name: { type: String, required: true },
   shortDescription: { type: String, required: true, maxlength: 100 },
   longDescription: { type: String },
-  category: { type: String, required: true },
-  additionalCategories: { type: [String], default: [] },
+  categoryGame: { type: String }, // Новая основная категория для игр
+  categoryApps: { type: String }, // Новая основная категория для приложений
+  additionalCategoriesGame: { type: [String], default: [] }, // Новые дополнительные категории для игр
+  additionalCategoriesApps: { type: [String], default: [] }, // Новые дополнительные категории для приложений
   icon: { type: String, required: true },
   banner: { type: String },
   gallery: { type: [String], default: [] },
@@ -32,9 +34,16 @@ const appSchema = new mongoose.Schema({
   },
   isPromotedInCatalog: { type: Boolean, default: false },
   isPromotedInCategory: { type: Boolean, default: false },
-  adminEmail: { type: String, default: '' }, // Убрали required: true
-  adminId: { type: String, default: '' },    // Убрали required: true
-  dateAdded: { type: String, default: new Date().toISOString() }, // Убрали required: true и добавили значение по умолчанию
+  adminEmail: { type: String, default: '' },
+  adminId: { type: String, default: '' },
+  dateAdded: { type: String, default: () => new Date().toISOString() },
+  // Новые поля
+  linkApp: { type: String }, // Ссылка на приложение
+  startPromoCatalog: { type: String }, // Дата начала промоакции для каталога
+  finishPromoCatalog: { type: String }, // Дата конца промоакции для каталога
+  startPromoCategory: { type: String }, // Дата начала промоакции для категории
+  finishPromoCategory: { type: String }, // Дата конца промоакции для категории
+  editCount: { type: Number, default: 0 }, // Количество редакций
 });
 
 module.exports = mongoose.model('App', appSchema);

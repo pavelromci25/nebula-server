@@ -38,9 +38,13 @@ const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: false }
 
 // Общие константы
 const PORT = process.env.PORT || 10000;
-const allowedDeveloperIds = ['6567771093'];
+let allowedDeveloperIds = ['6567771093']; // Список разрешённых разработчиков
 const allowedAdminIds = ['6567771093'];
 const adminId = '6567771093';
+
+// Список категорий
+const gameCategories = ['Arcade', 'Sport', 'Card', 'Race'];
+const appCategories = ['Useful', 'Business', 'Personal', 'Simple'];
 
 // Общие утилиты
 const generateReferralCode = () => {
@@ -72,7 +76,9 @@ app.get('/api/apps', async (req, res) => {
     const transformedApps = apps.map(app => ({
       ...app._doc,
       banner: app.bannerImages && app.bannerImages.length > 0 ? app.bannerImages[0] : '',
-      categories: [app.category, ...(app.additionalCategories || [])],
+      categories: app.type === 'game' 
+        ? [app.categoryGame, ...(app.additionalCategoriesGame || [])]
+        : [app.categoryApps, ...(app.additionalCategoriesApps || [])],
       rating: app.userRating,
       stars: app.stars || 0,
       telegramStars: app.telegramStarsDonations,
@@ -80,6 +86,11 @@ app.get('/api/apps', async (req, res) => {
       clicks: app.clicks,
       isPromotedInCatalog: app.isPromotedInCatalog,
       dateAdded: app.dateAdded,
+      linkApp: app.linkApp, // Добавляем linkApp
+      startPromoCatalog: app.startPromoCatalog, // Добавляем startPromoCatalog
+      finishPromoCatalog: app.finishPromoCatalog, // Добавляем finishPromoCatalog
+      startPromoCategory: app.startPromoCategory, // Добавляем startPromoCategory
+      finishPromoCategory: app.finishPromoCategory, // Добавляем finishPromoCategory
     }));
     res.json(transformedApps);
   } catch (error) {
@@ -210,6 +221,23 @@ bot.on('successful_payment', async (msg) => {
   }
 });
 
+// Эндпоинт для увеличения счётчика кликов
+app.post('/api/apps/:id/click', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const app = await App.findOne({ id });
+    if (!app) {
+      return res.status(404).json({ error: 'Приложение не найдено' });
+    }
+    app.clicks = (app.clicks || 0) + 1;
+    await app.save();
+    res.json({ message: 'Счётчик кликов увеличен', clicks: app.clicks });
+  } catch (error) {
+    console.error('Ошибка при увеличении счётчика кликов:', error);
+    res.status(500).json({ error: 'Ошибка при увеличении счётчика кликов: ' + error.message });
+  }
+});
+
 // Эндпоинты для пользователей каталога
 app.get('/api/users/:userId', async (req, res) => {
   try {
@@ -301,22 +329,6 @@ app.patch('/api/inventory/:userId', async (req, res) => {
   }
 });
 
-app.post('/api/apps/:id/click', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const app = await App.findOne({ id });
-    if (!app) {
-      return res.status(404).json({ error: 'Приложение не найдено' });
-    }
-    app.clicks = (app.clicks || 0) + 1;
-    await app.save();
-    res.json({ message: 'Счётчик кликов увеличен' });
-  } catch (error) {
-    console.error('Ошибка при увеличении счётчика кликов:', error);
-    res.status(500).json({ error: 'Ошибка при увеличении счётчика кликов: ' + error.message });
-  }
-});
-
 // ============================================================================
 // БЛОК 3: ДЛЯ РАЗРАБОТЧИКОВ (nebula-developer-frontend)
 // ============================================================================
@@ -360,29 +372,64 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
     const appData = req.body;
     console.log('Received appData:', appData);
 
+    // Валидация типа приложения
     if (!appData.type || !['game', 'app'].includes(appData.type)) {
       return res.status(400).json({ error: 'Тип приложения должен быть "game" или "app"' });
     }
+
+    // Валидация названия
     if (!appData.name || typeof appData.name !== 'string' || appData.name.trim() === '') {
       return res.status(400).json({ error: 'Название приложения обязательно' });
     }
+
+    // Валидация короткого описания
     if (!appData.shortDescription || typeof appData.shortDescription !== 'string' || appData.shortDescription.trim() === '') {
       return res.status(400).json({ error: 'Короткое описание обязательно' });
     }
     if (appData.shortDescription.length > 100) {
       return res.status(400).json({ error: 'Короткое описание не должно превышать 100 символов' });
     }
-    if (!appData.category || typeof appData.category !== 'string' || appData.category.trim() === '') {
-      return res.status(400).json({ error: 'Основная категория обязательна' });
+
+    // Валидация категории
+    const validCategories = appData.type === 'game' ? gameCategories : appCategories;
+    if (appData.type === 'game' && !validCategories.includes(appData.categoryGame)) {
+      return res.status(400).json({ error: `Основная категория для игры должна быть одной из: ${validCategories.join(', ')}` });
     }
+    if (appData.type === 'app' && !validCategories.includes(appData.categoryApps)) {
+      return res.status(400).json({ error: `Основная категория для приложения должна быть одной из: ${validCategories.join(', ')}` });
+    }
+
+    // Валидация дополнительных категорий
+    const additionalCategoriesField = appData.type === 'game' ? appData.additionalCategoriesGame : appData.additionalCategoriesApps;
+    if (additionalCategoriesField && additionalCategoriesField.length > 2) {
+      return res.status(400).json({ error: 'Максимум 2 дополнительные категории' });
+    }
+    if (additionalCategoriesField) {
+      for (const cat of additionalCategoriesField) {
+        if (!validCategories.includes(cat)) {
+          return res.status(400).json({ error: `Дополнительная категория "${cat}" должна быть одной из: ${validCategories.join(', ')}` });
+        }
+      }
+    }
+
+    // Валидация URL аватарки
     if (!appData.icon || typeof appData.icon !== 'string' || appData.icon.trim() === '') {
       return res.status(400).json({ error: 'URL аватарки обязателен' });
     }
+
+    // Валидация возрастного рейтинга
     if (!appData.ageRating || typeof appData.ageRating !== 'string' || appData.ageRating.trim() === '') {
       return res.status(400).json({ error: 'Возрастной рейтинг обязателен' });
     }
+
+    // Валидация контактов
     if (!appData.contactInfo || typeof appData.contactInfo !== 'string' || appData.contactInfo.trim() === '') {
       return res.status(400).json({ error: 'Контакты для связи обязательны' });
+    }
+
+    // Валидация linkApp
+    if (!appData.linkApp || !appData.linkApp.startsWith('https://t.me/')) {
+      return res.status(400).json({ error: 'Ссылка на приложение должна быть в формате https://t.me/...' });
     }
 
     const existingApp = await App.findOne({ name: appData.name, developerId: userId });
@@ -401,6 +448,8 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
       userRating: 0,
       complaints: 0,
       dateAdded: appData.dateAdded || new Date().toISOString(),
+      linkApp: appData.linkApp, // Добавляем linkApp
+      editCount: 0, // Инициализируем editCount
     });
     await newApp.save();
     developer.apps.push(newApp._id);
@@ -411,7 +460,7 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
                       `Разработчик: ${userId}\n` +
                       `Название: ${newApp.name}\n` +
                       `Тип: ${newApp.type}\n` +
-                      `Категория: ${newApp.category}\n` +
+                      `Категория: ${newApp.type === 'game' ? newApp.categoryGame : newApp.categoryApps}\n` +
                       `ID приложения: ${newApp.id}`;
       await adminBot.sendMessage(adminId, message);
     } catch (notificationError) {
@@ -432,10 +481,91 @@ app.patch('/api/developer/:userId/apps/:appId', async (req, res) => {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
     const updates = req.body;
-    const app = await App.findOneAndUpdate({ id: appId }, updates, { new: true });
+
+    // Валидация типа приложения
+    if (updates.type && !['game', 'app'].includes(updates.type)) {
+      return res.status(400).json({ error: 'Тип приложения должен быть "game" или "app"' });
+    }
+
+    // Валидация названия
+    if (updates.name && (typeof updates.name !== 'string' || updates.name.trim() === '')) {
+      return res.status(400).json({ error: 'Название приложения обязательно' });
+    }
+
+    // Валидация короткого описания
+    if (updates.shortDescription && (typeof updates.shortDescription !== 'string' || updates.shortDescription.trim() === '')) {
+      return res.status(400).json({ error: 'Короткое описание обязательно' });
+    }
+    if (updates.shortDescription && updates.shortDescription.length > 100) {
+      return res.status(400).json({ error: 'Короткое описание не должно превышать 100 символов' });
+    }
+
+    // Валидация категории
+    const validCategories = updates.type === 'game' ? gameCategories : appCategories;
+    if (updates.categoryGame && !validCategories.includes(updates.categoryGame)) {
+      return res.status(400).json({ error: `Основная категория для игры должна быть одной из: ${validCategories.join(', ')}` });
+    }
+    if (updates.categoryApps && !validCategories.includes(updates.categoryApps)) {
+      return res.status(400).json({ error: `Основная категория для приложения должна быть одной из: ${validCategories.join(', ')}` });
+    }
+
+    // Валидация дополнительных категорий
+    const additionalCategoriesField = updates.type === 'game' ? updates.additionalCategoriesGame : updates.additionalCategoriesApps;
+    if (additionalCategoriesField && additionalCategoriesField.length > 2) {
+      return res.status(400).json({ error: 'Максимум 2 дополнительные категории' });
+    }
+    if (additionalCategoriesField) {
+      for (const cat of additionalCategoriesField) {
+        if (!validCategories.includes(cat)) {
+          return res.status(400).json({ error: `Дополнительная категория "${cat}" должна быть одной из: ${validCategories.join(', ')}` });
+        }
+      }
+    }
+
+    // Валидация URL аватарки
+    if (updates.icon && (typeof updates.icon !== 'string' || updates.icon.trim() === '')) {
+      return res.status(400).json({ error: 'URL аватарки обязателен' });
+    }
+
+    // Валидация возрастного рейтинга
+    if (updates.ageRating && (typeof updates.ageRating !== 'string' || updates.ageRating.trim() === '')) {
+      return res.status(400).json({ error: 'Возрастной рейтинг обязателен' });
+    }
+
+    // Валидация контактов
+    if (updates.contactInfo && (typeof updates.contactInfo !== 'string' || updates.contactInfo.trim() === '')) {
+      return res.status(400).json({ error: 'Контакты для связи обязательны' });
+    }
+
+    // Валидация linkApp
+    if (updates.linkApp && !updates.linkApp.startsWith('https://t.me/')) {
+      return res.status(400).json({ error: 'Ссылка на приложение должна быть в формате https://t.me/...' });
+    }
+
+    const app = await App.findOne({ id: appId, developerId: userId });
     if (!app) {
       return res.status(404).json({ error: 'Приложение не найдено' });
     }
+
+    // Увеличиваем editCount и меняем статус на onModeration
+    app.editCount = (app.editCount || 0) + 1;
+    app.status = 'onModeration';
+    Object.assign(app, updates);
+    await app.save();
+
+    try {
+      const message = `Приложение обновлено и отправлено на повторную модерацию!\n` +
+                      `Разработчик: ${userId}\n` +
+                      `Название: ${app.name}\n` +
+                      `Тип: ${app.type}\n` +
+                      `Категория: ${app.type === 'game' ? app.categoryGame : app.categoryApps}\n` +
+                      `ID приложения: ${app.id}\n` +
+                      `Количество редакций: ${app.editCount}`;
+      await adminBot.sendMessage(adminId, message);
+    } catch (notificationError) {
+      console.error('Ошибка при отправке уведомления администратору:', notificationError);
+    }
+
     res.json(app);
   } catch (error) {
     console.error('Ошибка при обновлении приложения:', error);
@@ -462,7 +592,7 @@ app.get('/api/developer/:userId/stats', async (req, res) => {
         .findIndex(a => a.id === app.id) + 1;
 
       const categoryRank = allApps
-        .filter(a => a.category === app.category)
+        .filter(a => (a.type === 'game' ? a.categoryGame : a.categoryApps) === (app.type === 'game' ? app.categoryGame : app.categoryApps))
         .sort((a, b) => {
           const scoreA = (a.rating || 0) * 0.2 + (a.catalogRating || 0) * 0.2 + (a.telegramStarsDonations || 0) * 0.3 + (a.clicks || 0) * 0.0001;
           const scoreB = (b.rating || 0) * 0.2 + (b.catalogRating || 0) * 0.2 + (b.telegramStarsDonations || 0) * 0.3 + (b.clicks || 0) * 0.0001;
@@ -470,11 +600,11 @@ app.get('/api/developer/:userId/stats', async (req, res) => {
         })
         .findIndex(a => a.id === app.id) + 1;
 
-      const additionalCategoryRanks = (app.additionalCategories || []).map(cat => {
+      const additionalCategoryRanks = (app.type === 'game' ? app.additionalCategoriesGame : app.additionalCategoriesApps || []).map(cat => {
         return {
           category: cat,
           rank: allApps
-            .filter(a => a.additionalCategories && a.additionalCategories.includes(cat))
+            .filter(a => (a.type === 'game' ? a.additionalCategoriesGame : a.additionalCategoriesApps || []).includes(cat))
             .sort((a, b) => {
               const scoreA = (a.rating || 0) * 0.2 + (a.catalogRating || 0) * 0.2 + (a.telegramStarsDonations || 0) * 0.3 + (a.clicks || 0) * 0.0001;
               const scoreB = (b.rating || 0) * 0.2 + (b.catalogRating || 0) * 0.2 + (b.telegramStarsDonations || 0) * 0.3 + (b.clicks || 0) * 0.0001;
@@ -506,7 +636,7 @@ app.get('/api/developer/:userId/stats', async (req, res) => {
 
 app.post('/api/developer/:userId/promote', async (req, res) => {
   try {
-    const { userId, appId, type, duration } = req.body;
+    const { userId, appId, type } = req.body;
     if (!checkDeveloperAccess(userId)) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
@@ -520,27 +650,34 @@ app.post('/api/developer/:userId/promote', async (req, res) => {
       return res.status(404).json({ error: 'Приложение не найдено' });
     }
 
-    const cost = duration === 3 ? 50 : duration === 14 ? 200 : 500;
-    if ((developer.telegramStarsBalance || 0) < cost) {
-      return res.status(400).json({ error: 'Недостаточно Telegram Stars' });
+    // Устанавливаем стоимость и длительность продвижения
+    const cost = type === 'catalog' ? 1 : 2; // 1 звезда за каталог, 2 звезды за категорию
+    const durationMinutes = type === 'catalog' ? 1 : 2; // 1 минута для каталога, 2 минуты для категории
+
+    if ((developer.starsBalance || 0) < cost) {
+      return res.status(400).json({ error: 'Недостаточно Stars для продвижения' });
     }
 
-    developer.telegramStarsBalance -= cost;
+    developer.starsBalance -= cost;
     await developer.save();
 
     const endDate = new Date();
-    endDate.setDate(endDate.getDate() + duration);
+    endDate.setMinutes(endDate.getMinutes() + durationMinutes);
 
     if (type === 'catalog') {
       app.promotion.catalog = { active: true, endDate: endDate.toISOString() };
       app.isPromotedInCatalog = true;
+      app.startPromoCatalog = new Date().toISOString();
+      app.finishPromoCatalog = endDate.toISOString();
     } else if (type === 'category') {
       app.promotion.category = { active: true, endDate: endDate.toISOString() };
       app.isPromotedInCategory = true;
+      app.startPromoCategory = new Date().toISOString();
+      app.finishPromoCategory = endDate.toISOString();
     }
 
     await app.save();
-    res.json({ message: `Продвижение успешно активировано на ${duration} дней` });
+    res.json({ message: `Продвижение успешно активировано на ${durationMinutes} минут` });
   } catch (error) {
     console.error('Ошибка при активации продвижения:', error);
     res.status(500).json({ error: 'Ошибка при активации продвижения: ' + error.message });
@@ -579,11 +716,34 @@ app.get('/api/admin/stats', async (req, res) => {
       totalClicks: apps.reduce((sum, app) => sum + (app.clicks || 0), 0),
       totalStars: apps.reduce((sum, app) => sum + (app.telegramStarsDonations || 0), 0),
       totalComplaints: apps.reduce((sum, app) => sum + (app.complaints || 0), 0),
+      allowedDeveloperIds: allowedDeveloperIds, // Добавляем список разрешённых разработчиков
     };
     res.json(stats);
   } catch (error) {
     console.error('Ошибка при получении статистики для администратора:', error);
     res.status(500).json({ error: 'Ошибка при получении статистики: ' + error.message });
+  }
+});
+
+// Эндпоинт для добавления нового разрешённого разработчика
+app.post('/api/admin/add-developer', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!checkAdminAccess(userId)) {
+      return res.status(403).json({ error: 'Доступ запрещён' });
+    }
+    const { developerId } = req.body;
+    if (!developerId || typeof developerId !== 'string') {
+      return res.status(400).json({ error: 'ID разработчика обязателен и должен быть строкой' });
+    }
+    if (allowedDeveloperIds.includes(developerId)) {
+      return res.status(400).json({ error: 'Этот ID уже в списке разрешённых разработчиков' });
+    }
+    allowedDeveloperIds.push(developerId);
+    res.json({ message: `Разработчик с ID ${developerId} успешно добавлен`, allowedDeveloperIds });
+  } catch (error) {
+    console.error('Ошибка при добавлении разработчика:', error);
+    res.status(500).json({ error: 'Ошибка при добавлении разработчика: ' + error.message });
   }
 });
 
