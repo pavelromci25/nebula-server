@@ -95,6 +95,42 @@ initializeAllowedDevelopers();
 app.get('/api/apps', async (req, res) => {
   try {
     const apps = await App.find({ status: 'added' });
+
+    // Проверяем сроки продвижения для каждого приложения
+    const currentTime = new Date();
+    for (const app of apps) {
+      let updated = false;
+
+      // Проверка продвижения в каталоге
+      if (app.promotion.catalog.active && app.promotion.catalog.endDate) {
+        const endDateCatalog = new Date(app.promotion.catalog.endDate);
+        if (currentTime > endDateCatalog) {
+          app.promotion.catalog.active = false;
+          app.isPromotedInCatalog = false;
+          app.startPromoCatalog = undefined;
+          app.finishPromoCatalog = undefined;
+          updated = true;
+        }
+      }
+
+      // Проверка продвижения в категории
+      if (app.promotion.category.active && app.promotion.category.endDate) {
+        const endDateCategory = new Date(app.promotion.category.endDate);
+        if (currentTime > endDateCategory) {
+          app.promotion.category.active = false;
+          app.isPromotedInCategory = false;
+          app.startPromoCategory = undefined;
+          app.finishPromoCategory = undefined;
+          updated = true;
+        }
+      }
+
+      // Сохраняем изменения, если они есть
+      if (updated) {
+        await app.save();
+      }
+    }
+
     const transformedApps = apps.map(app => ({
       ...app._doc,
       banner: app.bannerImages && app.bannerImages.length > 0 ? app.bannerImages[0] : '',
