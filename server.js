@@ -11,6 +11,7 @@ const App = require('./models/App');
 const User = require('./models/User');
 const Inventory = require('./models/Inventory');
 const Developer = require('./models/Developer');
+const AllowedDeveloper = require('./models/AllowedDeveloper'); // Добавляем новую модель
 
 // Загружаем переменные окружения из .env
 dotenv.config();
@@ -38,7 +39,6 @@ const adminBot = new TelegramBot(process.env.ADMIN_BOT_TOKEN, { polling: false }
 
 // Общие константы
 const PORT = process.env.PORT || 10000;
-let allowedDeveloperIds = ['6567771093']; // Список разрешённых разработчиков
 const allowedAdminIds = ['6567771093'];
 const adminId = '6567771093';
 
@@ -52,8 +52,14 @@ const generateReferralCode = () => {
 };
 
 // Функции проверки доступа
-const checkDeveloperAccess = (userId) => {
-  return allowedDeveloperIds.includes(userId);
+const checkDeveloperAccess = async (userId) => {
+  try {
+    const allowedDeveloper = await AllowedDeveloper.findOne({ telegramId: userId });
+    return !!allowedDeveloper; // Возвращаем true, если ID найден в базе
+  } catch (error) {
+    console.error('Ошибка при проверке доступа разработчика:', error);
+    return false;
+  }
 };
 
 const checkAdminAccess = (userId) => {
@@ -65,11 +71,27 @@ const checkAdminAccess = (userId) => {
   return allowedAdminIds.includes(userId);
 };
 
+// Инициализация базы данных с начальными данными (опционально)
+const initializeAllowedDevelopers = async () => {
+  try {
+    const count = await AllowedDeveloper.countDocuments();
+    if (count === 0) {
+      // Добавляем начальный Telegram ID, если база пуста
+      await AllowedDeveloper.create({ telegramId: '6567771093' });
+      console.log('Добавлен начальный Telegram ID разработчика в базу данных');
+    }
+  } catch (error) {
+    console.error('Ошибка при инициализации базы данных AllowedDeveloper:', error);
+  }
+};
+
+// Вызываем инициализацию при старте сервера
+initializeAllowedDevelopers();
+
 // ============================================================================
 // БЛОК 2: ДЛЯ КАТАЛОГА (nebula-frontend)
 // ============================================================================
 
-// Эндпоинты для каталога приложений
 app.get('/api/apps', async (req, res) => {
   try {
     const apps = await App.find({ status: 'added' });
@@ -86,11 +108,11 @@ app.get('/api/apps', async (req, res) => {
       clicks: app.clicks,
       isPromotedInCatalog: app.isPromotedInCatalog,
       dateAdded: app.dateAdded,
-      linkApp: app.linkApp, // Добавляем linkApp
-      startPromoCatalog: app.startPromoCatalog, // Добавляем startPromoCatalog
-      finishPromoCatalog: app.finishPromoCatalog, // Добавляем finishPromoCatalog
-      startPromoCategory: app.startPromoCategory, // Добавляем startPromoCategory
-      finishPromoCategory: app.finishPromoCategory, // Добавляем finishPromoCategory
+      linkApp: app.linkApp,
+      startPromoCatalog: app.startPromoCatalog,
+      finishPromoCatalog: app.finishPromoCatalog,
+      startPromoCategory: app.startPromoCategory,
+      finishPromoCategory: app.finishPromoCategory,
     }));
     res.json(transformedApps);
   } catch (error) {
@@ -150,17 +172,14 @@ app.post('/api/apps/:id/donate', async (req, res) => {
       return res.status(400).json({ error: 'Максимум 10 Stars за один раз' });
     }
 
-    // Обновляем telegramStarsDonations вместо stars
     app.telegramStarsDonations = (app.telegramStarsDonations || 0) + stars;
     await app.save();
 
-    // Обновляем баланс разработчика
     const developer = await Developer.findOne({ userId: app.developerId });
     if (developer) {
       developer.starsBalance = (developer.starsBalance || 0) + stars;
       await developer.save();
 
-      // Отправляем уведомление разработчику
       try {
         const user = await User.findOne({ userId });
         const message = `Пользователь ${user?.username || 'Неизвестный'} задонатил вам ${stars} Stars для приложения ${app.name}!`;
@@ -170,7 +189,6 @@ app.post('/api/apps/:id/donate', async (req, res) => {
       }
     }
 
-    // Обновляем инвентарь пользователя (вычитаем stars)
     const inventory = await Inventory.findOne({ userId });
     if (!inventory) {
       return res.status(404).json({ error: 'Инвентарь пользователя не найден' });
@@ -188,7 +206,6 @@ app.post('/api/apps/:id/donate', async (req, res) => {
   }
 });
 
-// Обработчики Telegram-бота для каталога
 bot.on('pre_checkout_query', async (query) => {
   try {
     await bot.answerPreCheckoutQuery(query.id, true);
@@ -221,7 +238,6 @@ bot.on('successful_payment', async (msg) => {
   }
 });
 
-// Эндпоинт для увеличения счётчика кликов
 app.post('/api/apps/:id/click', async (req, res) => {
   try {
     const { id } = req.params;
@@ -238,7 +254,6 @@ app.post('/api/apps/:id/click', async (req, res) => {
   }
 });
 
-// Эндпоинты для пользователей каталога
 app.get('/api/users/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -279,7 +294,6 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// Эндпоинты для инвентаря пользователей каталога
 app.get('/api/inventory/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -336,7 +350,7 @@ app.patch('/api/inventory/:userId', async (req, res) => {
 app.get('/api/developer/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    if (!checkDeveloperAccess(userId)) {
+    if (!(await checkDeveloperAccess(userId))) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
     let developer = await Developer.findOne({ userId });
@@ -361,7 +375,7 @@ app.get('/api/developer/:userId', async (req, res) => {
 app.post('/api/developer/:userId/apps', async (req, res) => {
   try {
     const { userId } = req.params;
-    if (!checkDeveloperAccess(userId)) {
+    if (!(await checkDeveloperAccess(userId))) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
     const developer = await Developer.findOne({ userId });
@@ -372,17 +386,14 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
     const appData = req.body;
     console.log('Received appData:', appData);
 
-    // Валидация типа приложения
     if (!appData.type || !['game', 'app'].includes(appData.type)) {
       return res.status(400).json({ error: 'Тип приложения должен быть "game" или "app"' });
     }
 
-    // Валидация названия
     if (!appData.name || typeof appData.name !== 'string' || appData.name.trim() === '') {
       return res.status(400).json({ error: 'Название приложения обязательно' });
     }
 
-    // Валидация короткого описания
     if (!appData.shortDescription || typeof appData.shortDescription !== 'string' || appData.shortDescription.trim() === '') {
       return res.status(400).json({ error: 'Короткое описание обязательно' });
     }
@@ -390,7 +401,6 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
       return res.status(400).json({ error: 'Короткое описание не должно превышать 100 символов' });
     }
 
-    // Валидация категории
     const validCategories = appData.type === 'game' ? gameCategories : appCategories;
     if (appData.type === 'game') {
       if (!appData.categoryGame || !validCategories.includes(appData.categoryGame)) {
@@ -402,7 +412,6 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
       }
     }
 
-    // Валидация дополнительных категорий
     const additionalCategoriesField = appData.type === 'game' ? appData.additionalCategoriesGame : appData.additionalCategoriesApps;
     if (additionalCategoriesField && additionalCategoriesField.length > 2) {
       return res.status(400).json({ error: 'Максимум 2 дополнительные категории' });
@@ -415,22 +424,18 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
       }
     }
 
-    // Валидация URL аватарки
     if (!appData.icon || typeof appData.icon !== 'string' || appData.icon.trim() === '') {
       return res.status(400).json({ error: 'URL аватарки обязателен' });
     }
 
-    // Валидация возрастного рейтинга
     if (!appData.ageRating || typeof appData.ageRating !== 'string' || appData.ageRating.trim() === '') {
       return res.status(400).json({ error: 'Возрастной рейтинг обязателен' });
     }
 
-    // Валидация контактов
     if (!appData.contactInfo || typeof appData.contactInfo !== 'string' || appData.contactInfo.trim() === '') {
       return res.status(400).json({ error: 'Контакты для связи обязательны' });
     }
 
-    // Валидация linkApp
     if (!appData.linkApp || !appData.linkApp.startsWith('https://t.me/')) {
       return res.status(400).json({ error: 'Ссылка на приложение должна быть в формате https://t.me/...' });
     }
@@ -480,22 +485,19 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
 app.patch('/api/developer/:userId/apps/:appId', async (req, res) => {
   try {
     const { userId, appId } = req.params;
-    if (!checkDeveloperAccess(userId)) {
+    if (!(await checkDeveloperAccess(userId))) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
     const updates = req.body;
 
-    // Валидация типа приложения
     if (updates.type && !['game', 'app'].includes(updates.type)) {
       return res.status(400).json({ error: 'Тип приложения должен быть "game" или "app"' });
     }
 
-    // Валидация названия
     if (updates.name && (typeof updates.name !== 'string' || updates.name.trim() === '')) {
       return res.status(400).json({ error: 'Название приложения обязательно' });
     }
 
-    // Валидация короткого описания
     if (updates.shortDescription && (typeof updates.shortDescription !== 'string' || updates.shortDescription.trim() === '')) {
       return res.status(400).json({ error: 'Короткое описание обязательно' });
     }
@@ -503,7 +505,6 @@ app.patch('/api/developer/:userId/apps/:appId', async (req, res) => {
       return res.status(400).json({ error: 'Короткое описание не должно превышать 100 символов' });
     }
 
-    // Валидация категории
     const validCategories = updates.type === 'game' ? gameCategories : appCategories;
     if (updates.categoryGame && !validCategories.includes(updates.categoryGame)) {
       return res.status(400).json({ error: `Основная категория для игры должна быть одной из: ${validCategories.join(', ')}` });
@@ -512,7 +513,6 @@ app.patch('/api/developer/:userId/apps/:appId', async (req, res) => {
       return res.status(400).json({ error: `Основная категория для приложения должна быть одной из: ${validCategories.join(', ')}` });
     }
 
-    // Валидация дополнительных категорий
     const additionalCategoriesField = updates.type === 'game' ? updates.additionalCategoriesGame : updates.additionalCategoriesApps;
     if (additionalCategoriesField && additionalCategoriesField.length > 2) {
       return res.status(400).json({ error: 'Максимум 2 дополнительные категории' });
@@ -525,22 +525,18 @@ app.patch('/api/developer/:userId/apps/:appId', async (req, res) => {
       }
     }
 
-    // Валидация URL аватарки
     if (updates.icon && (typeof updates.icon !== 'string' || updates.icon.trim() === '')) {
       return res.status(400).json({ error: 'URL аватарки обязателен' });
     }
 
-    // Валидация возрастного рейтинга
     if (updates.ageRating && (typeof updates.ageRating !== 'string' || updates.ageRating.trim() === '')) {
       return res.status(400).json({ error: 'Возрастной рейтинг обязателен' });
     }
 
-    // Валидация контактов
     if (updates.contactInfo && (typeof updates.contactInfo !== 'string' || updates.contactInfo.trim() === '')) {
       return res.status(400).json({ error: 'Контакты для связи обязательны' });
     }
 
-    // Валидация linkApp
     if (updates.linkApp && !updates.linkApp.startsWith('https://t.me/')) {
       return res.status(400).json({ error: 'Ссылка на приложение должна быть в формате https://t.me/...' });
     }
@@ -550,7 +546,6 @@ app.patch('/api/developer/:userId/apps/:appId', async (req, res) => {
       return res.status(404).json({ error: 'Приложение не найдено' });
     }
 
-    // Увеличиваем editCount и меняем статус на onModeration
     app.editCount = (app.editCount || 0) + 1;
     app.status = 'onModeration';
     Object.assign(app, updates);
@@ -579,7 +574,7 @@ app.patch('/api/developer/:userId/apps/:appId', async (req, res) => {
 app.get('/api/developer/:userId/stats', async (req, res) => {
   try {
     const { userId } = req.params;
-    if (!checkDeveloperAccess(userId)) {
+    if (!(await checkDeveloperAccess(userId))) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
     const apps = await App.find({ developerId: userId });
@@ -640,7 +635,7 @@ app.get('/api/developer/:userId/stats', async (req, res) => {
 app.post('/api/developer/:userId/promote', async (req, res) => {
   try {
     const { userId, appId, type } = req.body;
-    if (!checkDeveloperAccess(userId)) {
+    if (!(await checkDeveloperAccess(userId))) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
     const developer = await Developer.findOne({ userId });
@@ -653,9 +648,8 @@ app.post('/api/developer/:userId/promote', async (req, res) => {
       return res.status(404).json({ error: 'Приложение не найдено' });
     }
 
-    // Устанавливаем стоимость и длительность продвижения
-    const cost = type === 'catalog' ? 1 : 2; // 1 звезда за каталог, 2 звезды за категорию
-    const durationMinutes = type === 'catalog' ? 1 : 2; // 1 минута для каталога, 2 минуты для категории
+    const cost = type === 'catalog' ? 1 : 2;
+    const durationMinutes = type === 'catalog' ? 1 : 2;
 
     if ((developer.starsBalance || 0) < cost) {
       return res.status(400).json({ error: 'Недостаточно Stars для продвижения' });
@@ -714,12 +708,13 @@ app.get('/api/admin/stats', async (req, res) => {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
     const apps = await App.find();
+    const allowedDevelopers = await AllowedDeveloper.find(); // Получаем список из базы
     const stats = {
       totalApps: apps.length,
       totalClicks: apps.reduce((sum, app) => sum + (app.clicks || 0), 0),
       totalStars: apps.reduce((sum, app) => sum + (app.telegramStarsDonations || 0), 0),
       totalComplaints: apps.reduce((sum, app) => sum + (app.complaints || 0), 0),
-      allowedDeveloperIds: allowedDeveloperIds, // Добавляем список разрешённых разработчиков
+      allowedDeveloperIds: allowedDevelopers.map(dev => dev.telegramId), // Извлекаем только telegramId
     };
     res.json(stats);
   } catch (error) {
@@ -728,7 +723,6 @@ app.get('/api/admin/stats', async (req, res) => {
   }
 });
 
-// Эндпоинт для добавления нового разрешённого разработчика
 app.post('/api/admin/add-developer', async (req, res) => {
   try {
     const userId = req.query.userId;
@@ -739,11 +733,20 @@ app.post('/api/admin/add-developer', async (req, res) => {
     if (!developerId || typeof developerId !== 'string') {
       return res.status(400).json({ error: 'ID разработчика обязателен и должен быть строкой' });
     }
-    if (allowedDeveloperIds.includes(developerId)) {
+
+    // Проверяем, существует ли уже такой ID в базе
+    const existingDeveloper = await AllowedDeveloper.findOne({ telegramId: developerId });
+    if (existingDeveloper) {
       return res.status(400).json({ error: 'Этот ID уже в списке разрешённых разработчиков' });
     }
-    allowedDeveloperIds.push(developerId);
-    res.json({ message: `Разработчик с ID ${developerId} успешно добавлен`, allowedDeveloperIds });
+
+    // Добавляем новый ID в базу
+    const newAllowedDeveloper = new AllowedDeveloper({ telegramId: developerId });
+    await newAllowedDeveloper.save();
+
+    // Получаем обновлённый список
+    const allowedDevelopers = await AllowedDeveloper.find();
+    res.json({ message: `Разработчик с ID ${developerId} успешно добавлен`, allowedDeveloperIds: allowedDevelopers.map(dev => dev.telegramId) });
   } catch (error) {
     console.error('Ошибка при добавлении разработчика:', error);
     res.status(500).json({ error: 'Ошибка при добавлении разработчика: ' + error.message });
