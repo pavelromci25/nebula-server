@@ -634,16 +634,24 @@ app.get('/api/developer/:userId/stats', async (req, res) => {
 
 app.post('/api/developer/:userId/promote', async (req, res) => {
   try {
-    const { userId, appId, type } = req.body;
-    if (!(await checkDeveloperAccess(userId))) {
+    const userIdFromParams = req.params.userId; // Извлекаем userId из URL
+    const { userId: userIdFromBody, appId, type } = req.body; // Извлекаем userId из тела
+
+    // Проверяем совпадение userId из URL и тела
+    if (userIdFromParams !== userIdFromBody) {
+      return res.status(403).json({ error: 'Несовпадение userId в параметрах и теле запроса' });
+    }
+
+    if (!(await checkDeveloperAccess(userIdFromParams))) {
       return res.status(403).json({ error: 'Доступ запрещён' });
     }
-    const developer = await Developer.findOne({ userId });
+
+    const developer = await Developer.findOne({ userId: userIdFromParams });
     if (!developer) {
       return res.status(404).json({ error: 'Разработчик не найден' });
     }
 
-    const app = await App.findOne({ id: appId, developerId: userId });
+    const app = await App.findOne({ id: appId, developerId: userIdFromParams });
     if (!app) {
       return res.status(404).json({ error: 'Приложение не найдено' });
     }
