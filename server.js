@@ -634,10 +634,9 @@ app.get('/api/developer/:userId/stats', async (req, res) => {
 
 app.post('/api/developer/:userId/promote', async (req, res) => {
   try {
-    const userIdFromParams = req.params.userId; // Извлекаем userId из URL
-    const { userId: userIdFromBody, appId, type } = req.body; // Извлекаем userId из тела
+    const userIdFromParams = req.params.userId;
+    const { userId: userIdFromBody, appId, type, source } = req.body;
 
-    // Проверяем совпадение userId из URL и тела
     if (userIdFromParams !== userIdFromBody) {
       return res.status(403).json({ error: 'Несовпадение userId в параметрах и теле запроса' });
     }
@@ -659,12 +658,22 @@ app.post('/api/developer/:userId/promote', async (req, res) => {
     const cost = type === 'catalog' ? 1 : 2;
     const durationMinutes = type === 'catalog' ? 1 : 2;
 
-    if ((developer.starsBalance || 0) < cost) {
-      return res.status(400).json({ error: 'Недостаточно Stars для продвижения' });
+    // Проверяем источник списания звёзд
+    if (source === 'developer') {
+      if ((developer.starsBalance || 0) < cost) {
+        return res.status(400).json({ error: 'Недостаточно Stars на личном кошельке для продвижения' });
+      }
+      developer.starsBalance -= cost;
+      await developer.save();
+    } else if (source === 'app') {
+      if ((app.telegramStarsDonations || 0) < cost) {
+        return res.status(400).json({ error: 'Недостаточно Stars на балансе приложения для продвижения' });
+      }
+      app.telegramStarsDonations -= cost;
+      await app.save();
+    } else {
+      return res.status(400).json({ error: 'Неверный источник списания звёзд. Используйте "developer" или "app"' });
     }
-
-    developer.starsBalance -= cost;
-    await developer.save();
 
     const endDate = new Date();
     endDate.setMinutes(endDate.getMinutes() + durationMinutes);
