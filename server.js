@@ -392,11 +392,14 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
 
     // Валидация категории
     const validCategories = appData.type === 'game' ? gameCategories : appCategories;
-    if (appData.type === 'game' && !validCategories.includes(appData.categoryGame)) {
-      return res.status(400).json({ error: `Основная категория для игры должна быть одной из: ${validCategories.join(', ')}` });
-    }
-    if (appData.type === 'app' && !validCategories.includes(appData.categoryApps)) {
-      return res.status(400).json({ error: `Основная категория для приложения должна быть одной из: ${validCategories.join(', ')}` });
+    if (appData.type === 'game') {
+      if (!appData.categoryGame || !validCategories.includes(appData.categoryGame)) {
+        return res.status(400).json({ error: `Основная категория для игры должна быть одной из: ${validCategories.join(', ')}` });
+      }
+    } else {
+      if (!appData.categoryApps || !validCategories.includes(appData.categoryApps)) {
+        return res.status(400).json({ error: `Основная категория для приложения должна быть одной из: ${validCategories.join(', ')}` });
+      }
     }
 
     // Валидация дополнительных категорий
@@ -448,8 +451,8 @@ app.post('/api/developer/:userId/apps', async (req, res) => {
       userRating: 0,
       complaints: 0,
       dateAdded: appData.dateAdded || new Date().toISOString(),
-      linkApp: appData.linkApp, // Добавляем linkApp
-      editCount: 0, // Инициализируем editCount
+      linkApp: appData.linkApp,
+      editCount: 0,
     });
     await newApp.save();
     developer.apps.push(newApp._id);
